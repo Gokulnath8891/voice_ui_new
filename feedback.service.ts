@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { shareReplay, tap, finalize } from 'rxjs/operators';
 import { environment } from 'src/environments/environment';
 import { AuthService } from './auth.service';
 
@@ -88,17 +89,11 @@ export class FeedbackService {
     // Create unique key for this feedback request
     const feedbackKey = `${sessionId}-${stepNumber}-${feedback}-${userId}`;
     
-    console.log(`[FeedbackService] 🎯 submitFeedback called:`, { sessionId, stepNumber, feedback, notes, userId, feedbackKey });
-    console.trace(`[FeedbackService] submitFeedback call stack`);
+    console.log(`[FeedbackService] 🎯 submitFeedback called:`, { sessionId, stepNumber, feedback, feedbackKey });
     
     // CRITICAL: Check if this exact feedback call is already in progress GLOBALLY
     if (FeedbackService.pendingFeedbackCalls.has(feedbackKey)) {
-      console.warn(`[FeedbackService] ⛔ DUPLICATE FEEDBACK CALL BLOCKED GLOBALLY - Already in progress:`, {
-        sessionId,
-        stepNumber,
-        feedback,
-        feedbackKey
-      });
+      console.warn(`[FeedbackService] ⛔ DUPLICATE FEEDBACK CALL BLOCKED - Returning cached observable:`, feedbackKey);
       // Return the existing observable instead of making a duplicate call
       return FeedbackService.pendingFeedbackCalls.get(feedbackKey)!;
     }
@@ -117,30 +112,24 @@ export class FeedbackService {
       user_id: userId
     };
 
-    console.log(`[FeedbackService] 📤 Sending feedback request to: ${this.apiUrl}/chat/feedback/`);
-    console.log(`[FeedbackService] 📦 Payload:`, payload);
+    console.log(`[FeedbackService] 📤 Making HTTP POST to: ${this.apiUrl}/chat/feedback/`);
 
-    // Create the observable
+    // Create the observable with shareReplay to ensure only ONE HTTP call
     const feedbackObservable = this.http.post<FeedbackResponse>(
       `${this.apiUrl}/chat/feedback/`,
       payload,
       { headers }
+    ).pipe(
+      tap(() => console.log(`[FeedbackService] ✅ Feedback call SUCCESS [${feedbackKey}]`)),
+      finalize(() => {
+        console.log(`[FeedbackService] 🧹 Cleaning up [${feedbackKey}]`);
+        FeedbackService.pendingFeedbackCalls.delete(feedbackKey);
+      }),
+      shareReplay(1) // Share the result with all subscribers, only make ONE HTTP call
     );
     
     // Store the pending call GLOBALLY
     FeedbackService.pendingFeedbackCalls.set(feedbackKey, feedbackObservable);
-    
-    // Clean up after the call completes (automatically handled by RxJS completion)
-    feedbackObservable.subscribe({
-      next: () => {
-        console.log(`[FeedbackService] ✅ Feedback call completed [${feedbackKey}] - Removing from pending map`);
-        FeedbackService.pendingFeedbackCalls.delete(feedbackKey);
-      },
-      error: () => {
-        console.log(`[FeedbackService] ❌ Feedback call failed [${feedbackKey}] - Removing from pending map`);
-        FeedbackService.pendingFeedbackCalls.delete(feedbackKey);
-      }
-    });
     
     return feedbackObservable;
   }
@@ -155,19 +144,13 @@ export class FeedbackService {
     timeSpent: number = 0.5
   ): Observable<FeedbackResponse> {
     // Create unique key for this work order feedback request
-    const feedbackKey = `wo-${workOrderId}-${stepId}-${feedbackText.substring(0, 20)}`;
+    const feedbackKey = `wo-${workOrderId}-${stepId}`;
     
-    console.log(`[FeedbackService] 🎯 submitWorkOrderFeedback called:`, { workOrderId, stepId, feedbackText, timeSpent, feedbackKey });
-    console.trace(`[FeedbackService] submitWorkOrderFeedback call stack`);
+    console.log(`[FeedbackService] 🎯 submitWorkOrderFeedback called:`, { workOrderId, stepId, feedbackKey });
     
     // CRITICAL: Check if this exact work order feedback call is already in progress GLOBALLY
     if (FeedbackService.pendingWorkOrderFeedbackCalls.has(feedbackKey)) {
-      console.warn(`[FeedbackService] ⛔ DUPLICATE WORK ORDER FEEDBACK CALL BLOCKED GLOBALLY - Already in progress:`, {
-        workOrderId,
-        stepId,
-        feedbackText,
-        feedbackKey
-      });
+      console.warn(`[FeedbackService] ⛔ DUPLICATE WORK ORDER FEEDBACK BLOCKED - Returning cached observable:`, feedbackKey);
       // Return the existing observable instead of making a duplicate call
       return FeedbackService.pendingWorkOrderFeedbackCalls.get(feedbackKey)!;
     }
@@ -184,30 +167,24 @@ export class FeedbackService {
       time_spent: timeSpent
     };
 
-    console.log(`[FeedbackService] 📤 Sending work order feedback request to: ${this.apiUrl}/workorders/${workOrderId}/feedback/`);
-    console.log(`[FeedbackService] 📦 Payload:`, payload);
+    console.log(`[FeedbackService] 📤 Making HTTP POST to: ${this.apiUrl}/workorders/${workOrderId}/feedback/`);
 
-    // Create the observable
+    // Create the observable with shareReplay to ensure only ONE HTTP call
     const feedbackObservable = this.http.post<FeedbackResponse>(
       `${this.apiUrl}/workorders/${workOrderId}/feedback/`,
       payload,
       { headers }
+    ).pipe(
+      tap(() => console.log(`[FeedbackService] ✅ Work order feedback SUCCESS [${feedbackKey}]`)),
+      finalize(() => {
+        console.log(`[FeedbackService] 🧹 Cleaning up [${feedbackKey}]`);
+        FeedbackService.pendingWorkOrderFeedbackCalls.delete(feedbackKey);
+      }),
+      shareReplay(1) // Share the result with all subscribers, only make ONE HTTP call
     );
     
     // Store the pending call GLOBALLY
     FeedbackService.pendingWorkOrderFeedbackCalls.set(feedbackKey, feedbackObservable);
-    
-    // Clean up after the call completes (automatically handled by RxJS completion)
-    feedbackObservable.subscribe({
-      next: () => {
-        console.log(`[FeedbackService] ✅ Work order feedback call completed [${feedbackKey}] - Removing from pending map`);
-        FeedbackService.pendingWorkOrderFeedbackCalls.delete(feedbackKey);
-      },
-      error: () => {
-        console.log(`[FeedbackService] ❌ Work order feedback call failed [${feedbackKey}] - Removing from pending map`);
-        FeedbackService.pendingWorkOrderFeedbackCalls.delete(feedbackKey);
-      }
-    });
     
     return feedbackObservable;
   }

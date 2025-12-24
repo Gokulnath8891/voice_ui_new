@@ -100,8 +100,7 @@ export class VoiceApiService {
   ) {
     this.instanceId = Math.random().toString(36).substring(7);
     VoiceApiService.callCounter++;
-    console.log(`[VoiceAPI] 🏗️ Service instance created [${this.instanceId}] - Total instances: ${VoiceApiService.callCounter}`);
-    console.trace('[VoiceAPI] Service instantiation stack');
+    console.log(`[VoiceAPI] Service instance created [${this.instanceId}]`);
   }
 
   async sendVoiceMessage(transcribedText: string): Promise<{ response: string; audioResponse?: Blob }> {
@@ -143,16 +142,14 @@ export class VoiceApiService {
 
   async sendTextToAPI(text: string, isVoiceInput: boolean = false): Promise<string> {
     try {
-      const callId = Math.random().toString(36).substring(7);
-      console.log(`[VoiceAPI:${this.instanceId}] 🔵 sendTextToAPI START [${callId}]`, { text, isVoiceInput });
-      console.trace(`[VoiceAPI:${this.instanceId}] Call stack for [${callId}]`);
+      console.log(`[VoiceAPI:${this.instanceId}] 🔵 sendTextToAPI:`, { text, isVoiceInput });
       
       // Check if this is a "proceed" or "completed" command for next step
       const nextStepPattern = /(?:proceed|continue|next|move\s+to\s+next|completed?)\s+(?:step|to\s+step)?/i;
       const sessionId = sessionStorage.getItem('current_session_id');
       
       if (nextStepPattern.test(text) && sessionId) {
-        console.log('[VoiceAPI] Next step command detected:', text);
+        console.log('[VoiceAPI] Next step command detected');
         return await this.proceedNextStep(sessionId, text);
       }
       
@@ -224,39 +221,23 @@ export class VoiceApiService {
   async startWorkOrder(workOrderNumber: string, userId: number, type: 'text' | 'voice'): Promise<WorkOrderStartResponse> {
     const workOrderKey = `${workOrderNumber}-${userId}-${type}`;
     
-    console.log(`[VoiceAPI:${this.instanceId}] 🚀 startWorkOrder called:`, { workOrderNumber, userId, type, workOrderKey });
-    console.trace(`[VoiceAPI:${this.instanceId}] Call stack trace`);
+    console.log(`[VoiceAPI:${this.instanceId}] 🚀 startWorkOrder:`, { workOrderNumber, workOrderKey });
     
     // CRITICAL: Check if this exact work order call is already in progress GLOBALLY
     if (VoiceApiService.pendingWorkOrderCalls.has(workOrderKey)) {
-      console.warn(`[VoiceAPI:${this.instanceId}] ⛔ DUPLICATE WORK ORDER CALL BLOCKED GLOBALLY - Already in progress:`, {
-        workOrderNumber,
-        userId,
-        type,
-        workOrderKey
-      });
-      // Return the existing promise instead of making a duplicate call
+      console.warn(`[VoiceAPI:${this.instanceId}] ⛔ DUPLICATE WORK ORDER BLOCKED - Returning cached promise:`, workOrderKey);
       return VoiceApiService.pendingWorkOrderCalls.get(workOrderKey)!;
     }
     
     // Create the API call promise
-    const apiCallPromise = this.executeWorkOrderCall(workOrderNumber, userId, type, workOrderKey);
+    const apiCallPromise = this.executeWorkOrderCall(workOrderNumber, userId, type, workOrderKey)
+      .finally(() => {
+        console.log(`[VoiceAPI:${this.instanceId}] 🧹 Cleaning up work order call [${workOrderKey}]`);
+        VoiceApiService.pendingWorkOrderCalls.delete(workOrderKey);
+      });
     
     // Store the pending call GLOBALLY
     VoiceApiService.pendingWorkOrderCalls.set(workOrderKey, apiCallPromise);
-    
-    // Clean up after the call completes (success or failure)
-    apiCallPromise
-      .then((response) => {
-        console.log(`[VoiceAPI:${this.instanceId}] ✅ Work order call completed [${workOrderKey}] - Removing from pending map`);
-        VoiceApiService.pendingWorkOrderCalls.delete(workOrderKey);
-        return response;
-      })
-      .catch((error) => {
-        console.log(`[VoiceAPI:${this.instanceId}] ❌ Work order call failed [${workOrderKey}] - Removing from pending map`);
-        VoiceApiService.pendingWorkOrderCalls.delete(workOrderKey);
-        throw error;
-      });
     
     return apiCallPromise;
   }
@@ -267,32 +248,6 @@ export class VoiceApiService {
   private async executeWorkOrderCall(workOrderNumber: string, userId: number, type: 'text' | 'voice', workOrderKey: string): Promise<WorkOrderStartResponse> {
     try {
       console.log(`[VoiceAPI:${this.instanceId}] 📞 Executing work order API call [${workOrderKey}]`);
-      
-      // Check for duplicate API calls (legacy check - now redundant with global lock)
-      const now = Date.now();
-      if (this.lastApiCall) {
-        const timeSinceLastCall = now - this.lastApiCall.timestamp;
-        const isSameWorkOrder = this.lastApiCall.workOrder === workOrderNumber;
-        
-        if (isSameWorkOrder && timeSinceLastCall < this.API_DUPLICATE_THRESHOLD_MS) {
-          console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE API CALL BLOCKED (Timestamp check):`, {
-            workOrderNumber,
-            type,
-            lastCallType: this.lastApiCall.type,
-            timeSinceLastCall: `${timeSinceLastCall}ms`,
-            threshold: `${this.API_DUPLICATE_THRESHOLD_MS}ms`
-          });
-          
-          // Return error response
-          return {
-            type: 'error',
-            message: 'Duplicate request detected and blocked to prevent double processing.'
-          };
-        }
-      }
-      
-      // Update last API call tracker
-      this.lastApiCall = { workOrder: workOrderNumber, type, timestamp: now };
       
       // Get authentication token
       const token = this.authService.getToken();
@@ -306,8 +261,7 @@ export class VoiceApiService {
         type
       };
 
-      console.log(`[VoiceAPI:${this.instanceId}] 📤 Sending request to:`, this.CHAT_QUERY_ENDPOINT);
-      console.log(`[VoiceAPI:${this.instanceId}] 📦 Payload:`, payload);
+      console.log(`[VoiceAPI:${this.instanceId}] 📤 POST ${this.CHAT_QUERY_ENDPOINT}`);
 
       const response = await fetch(this.CHAT_QUERY_ENDPOINT, {
         method: 'POST',
@@ -327,7 +281,7 @@ export class VoiceApiService {
 
       const result: WorkOrderStartResponse = await response.json();
       
-      console.log(`[VoiceAPI:${this.instanceId}] 📥 Response received:`, result);
+      console.log(`[VoiceAPI:${this.instanceId}] ✅ Response received for [${workOrderKey}]`);
       
       // Store session ID for future feedback submissions
       if (result.session_id) {
@@ -337,7 +291,7 @@ export class VoiceApiService {
       
       return result;
     } catch (error) {
-      console.error(`[VoiceAPI:${this.instanceId}] Work order start API error:`, error);
+      console.error(`[VoiceAPI:${this.instanceId}] ❌ Work order API error [${workOrderKey}]:`, error);
       return {
         type: 'error',
         message: 'Failed to start work order. Please try again.'
@@ -429,31 +383,23 @@ export class VoiceApiService {
     const callId = Math.random().toString(36).substring(7);
     const queryKey = query.toLowerCase().trim();
     
-    console.log(`[VoiceAPI:${this.instanceId}] 🔍 queryAgenticRag [${callId}] START - query:`, query);
-    console.trace(`[VoiceAPI:${this.instanceId}] queryAgenticRag [${callId}] call stack`);
+    console.log(`[VoiceAPI:${this.instanceId}] 🔍 queryAgenticRag [${callId}]:`, query);
     
     // Check if there's already a pending call for this exact query
     if (this.pendingAgenticRagCalls.has(queryKey)) {
-      console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE CALL [${callId}] DETECTED - Returning existing promise for:`, query);
+      console.warn(`[VoiceAPI:${this.instanceId}] ⛔ DUPLICATE AGENTIC RAG BLOCKED - Returning cached promise`);
       return this.pendingAgenticRagCalls.get(queryKey)!;
     }
     
     // Create the API call promise
-    const apiCallPromise = this.executeAgenticRagCall(query, callId);
+    const apiCallPromise = this.executeAgenticRagCall(query, callId)
+      .finally(() => {
+        console.log(`[VoiceAPI:${this.instanceId}] 🧹 Cleaning up agentic RAG call [${callId}]`);
+        this.pendingAgenticRagCalls.delete(queryKey);
+      });
     
     // Store the pending call
     this.pendingAgenticRagCalls.set(queryKey, apiCallPromise);
-    
-    // Clean up after the call completes (success or failure)
-    apiCallPromise
-      .then(() => {
-        console.log(`[VoiceAPI:${this.instanceId}] ✅ Removing completed call [${callId}] from pending map`);
-        this.pendingAgenticRagCalls.delete(queryKey);
-      })
-      .catch(() => {
-        console.log(`[VoiceAPI:${this.instanceId}] ❌ Removing failed call [${callId}] from pending map`);
-        this.pendingAgenticRagCalls.delete(queryKey);
-      });
     
     return apiCallPromise;
   }
@@ -470,7 +416,7 @@ export class VoiceApiService {
         query
       };
 
-      console.log(`[VoiceAPI:${this.instanceId}] 📤 Making fetch request [${callId}]`);
+      console.log(`[VoiceAPI:${this.instanceId}] 📤 POST ${this.AGENTIC_RAG_ENDPOINT}`);
 
       const response = await fetch(this.AGENTIC_RAG_ENDPOINT, {
         method: 'POST',
@@ -490,27 +436,18 @@ export class VoiceApiService {
 
       const result: AgenticRagResponse = await response.json();
       
-      console.log(`[VoiceAPI:${this.instanceId}] 📥 Agentic RAG response received:`, result);
+      console.log(`[VoiceAPI:${this.instanceId}] ✅ Agentic RAG response received [${callId}]`);
       
       // Return the result field from the new format
       // Fallback to old format if needed
       if (result.success && result.result) {
-        console.log(`[VoiceAPI:${this.instanceId}] ✅ Returning result:`, result.result);
-        console.log(`[VoiceAPI:${this.instanceId}] Route:`, result.route);
-        console.log(`[VoiceAPI:${this.instanceId}] Query:`, result.query);
-        if (result.per_sub) {
-          console.log(`[VoiceAPI:${this.instanceId}] Sub-queries:`, result.per_sub.length);
-        }
-        if (result.judge) {
-          console.log(`[VoiceAPI:${this.instanceId}] Judge verdict:`, result.judge.verdict);
-        }
         return result.result;
       }
       
       // Fallback to old format
       return result.response || result.tts_text || 'No response available';
     } catch (error) {
-      console.error('Agentic RAG API error:', error);
+      console.error(`[VoiceAPI:${this.instanceId}] ❌ Agentic RAG error [${callId}]:`, error);
       throw new Error('Failed to get response from agentic RAG. Please try again.');
     }
   }
