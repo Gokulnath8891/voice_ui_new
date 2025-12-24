@@ -83,6 +83,7 @@ export class VoiceApiService {
   
   // Duplicate detection
   private lastApiCall: { workOrder: string; type: string; timestamp: number } | null = null;
+  private lastAgenticRagCall: { query: string; timestamp: number } | null = null;
   private readonly API_DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
   private static callCounter = 0; // Global call counter across all instances
   private instanceId: string;
@@ -379,6 +380,30 @@ export class VoiceApiService {
    */
   async queryAgenticRag(query: string): Promise<string> {
     try {
+      console.log(`[VoiceAPI:${this.instanceId}] 🔍 queryAgenticRag called with:`, query);
+      console.trace(`[VoiceAPI:${this.instanceId}] queryAgenticRag call stack`);
+      
+      // Check for duplicate API calls
+      const now = Date.now();
+      if (this.lastAgenticRagCall) {
+        const timeSinceLastCall = now - this.lastAgenticRagCall.timestamp;
+        const isSameQuery = this.lastAgenticRagCall.query.toLowerCase().trim() === query.toLowerCase().trim();
+        
+        if (isSameQuery && timeSinceLastCall < this.API_DUPLICATE_THRESHOLD_MS) {
+          console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE AGENTIC RAG CALL BLOCKED:`, {
+            query,
+            timeSinceLastCall: `${timeSinceLastCall}ms`,
+            threshold: `${this.API_DUPLICATE_THRESHOLD_MS}ms`
+          });
+          
+          // Return a placeholder to avoid actual duplicate API call
+          return 'Processing your previous request...';
+        }
+      }
+      
+      // Update last API call tracker
+      this.lastAgenticRagCall = { query, timestamp: now };
+      
       // Get authentication token
       const token = this.authService.getToken();
       if (!token) {
@@ -389,7 +414,7 @@ export class VoiceApiService {
         query
       };
 
-      console.log('[VoiceAPI] Calling agentic RAG with query:', query);
+      console.log(`[VoiceAPI:${this.instanceId}] 📤 Calling agentic RAG endpoint with query:`, query);
 
       const response = await fetch(this.AGENTIC_RAG_ENDPOINT, {
         method: 'POST',
@@ -409,19 +434,19 @@ export class VoiceApiService {
 
       const result: AgenticRagResponse = await response.json();
       
-      console.log('[VoiceAPI] Agentic RAG full response:', result);
+      console.log(`[VoiceAPI:${this.instanceId}] 📥 Agentic RAG response received:`, result);
       
       // Return the result field from the new format
       // Fallback to old format if needed
       if (result.success && result.result) {
-        console.log('[VoiceAPI] Returning result:', result.result);
-        console.log('[VoiceAPI] Route:', result.route);
-        console.log('[VoiceAPI] Query:', result.query);
+        console.log(`[VoiceAPI:${this.instanceId}] ✅ Returning result:`, result.result);
+        console.log(`[VoiceAPI:${this.instanceId}] Route:`, result.route);
+        console.log(`[VoiceAPI:${this.instanceId}] Query:`, result.query);
         if (result.per_sub) {
-          console.log('[VoiceAPI] Sub-queries:', result.per_sub.length);
+          console.log(`[VoiceAPI:${this.instanceId}] Sub-queries:`, result.per_sub.length);
         }
         if (result.judge) {
-          console.log('[VoiceAPI] Judge verdict:', result.judge.verdict);
+          console.log(`[VoiceAPI:${this.instanceId}] Judge verdict:`, result.judge.verdict);
         }
         return result.result;
       }
