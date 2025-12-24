@@ -379,30 +379,11 @@ export class VoiceApiService {
    * Returns the result field from the response
    */
   async queryAgenticRag(query: string): Promise<string> {
+    const callId = Math.random().toString(36).substring(7);
+    
     try {
-      console.log(`[VoiceAPI:${this.instanceId}] 🔍 queryAgenticRag called with:`, query);
-      console.trace(`[VoiceAPI:${this.instanceId}] queryAgenticRag call stack`);
-      
-      // Check for duplicate API calls
-      const now = Date.now();
-      if (this.lastAgenticRagCall) {
-        const timeSinceLastCall = now - this.lastAgenticRagCall.timestamp;
-        const isSameQuery = this.lastAgenticRagCall.query.toLowerCase().trim() === query.toLowerCase().trim();
-        
-        if (isSameQuery && timeSinceLastCall < this.API_DUPLICATE_THRESHOLD_MS) {
-          console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE AGENTIC RAG CALL BLOCKED:`, {
-            query,
-            timeSinceLastCall: `${timeSinceLastCall}ms`,
-            threshold: `${this.API_DUPLICATE_THRESHOLD_MS}ms`
-          });
-          
-          // Return a placeholder to avoid actual duplicate API call
-          return 'Processing your previous request...';
-        }
-      }
-      
-      // Update last API call tracker
-      this.lastAgenticRagCall = { query, timestamp: now };
+      console.log(`[VoiceAPI:${this.instanceId}] 🔍 queryAgenticRag [${callId}] START - query:`, query);
+      console.trace(`[VoiceAPI:${this.instanceId}] queryAgenticRag [${callId}] call stack`);
       
       // Get authentication token
       const token = this.authService.getToken();
@@ -414,7 +395,7 @@ export class VoiceApiService {
         query
       };
 
-      console.log(`[VoiceAPI:${this.instanceId}] 📤 Calling agentic RAG endpoint with query:`, query);
+      console.log(`[VoiceAPI:${this.instanceId}] 📤 Making fetch request [${callId}]`);
 
       const response = await fetch(this.AGENTIC_RAG_ENDPOINT, {
         method: 'POST',
