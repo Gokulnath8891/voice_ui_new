@@ -82,6 +82,8 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
   private lastProcessedMessage = '';
   private lastProcessedTime = 0;
   private readonly DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
+  private isProcessingMessage = false; // Flag to prevent concurrent processing
+  private pendingFeedback = new Set<string>(); // Track pending feedback requests
 
   constructor(
     private readonly workOrderService: WorkOrderService,
@@ -533,7 +535,10 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
    * Send message
    */
   async sendMessage(): Promise<void> {
-    if (!this.userInput.trim() || this.isProcessing) return;
+    if (!this.userInput.trim() || this.isProcessing || this.isProcessingMessage) {
+      console.log('[WorkOrderModal] ⚠️ Skipping sendMessage - already processing or empty input');
+      return;
+    }
 
     const messageText = this.userInput.trim();
     
@@ -552,6 +557,9 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       return;
     }
     
+    // Set processing flag IMMEDIATELY to block concurrent calls
+    this.isProcessingMessage = true;
+    
     // Update tracking
     this.lastProcessedMessage = messageText;
     this.lastProcessedTime = now;
@@ -561,14 +569,19 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
     // Add user message
     this.addMessage(messageText, 'user', false);
 
-    // Check if it's a "proceed" command
-    const nextStepPattern = /(?:proceed|continue|next|move\s+to\s+next|completed?)\s+(?:step|to\s+step)?/i;
-    
-    if (nextStepPattern.test(messageText) && this.currentSessionId) {
-      await this.proceedToNextStep(messageText);
-    } else {
-      // Send as regular query to chat API
-      await this.sendQueryToAPI(messageText);
+    try {
+      // Check if it's a "proceed" command
+      const nextStepPattern = /(?:proceed|continue|next|move\s+to\s+next|completed?)\s+(?:step|to\s+step)?/i;
+      
+      if (nextStepPattern.test(messageText) && this.currentSessionId) {
+        await this.proceedToNextStep(messageText);
+      } else {
+        // Send as regular query to chat API
+        await this.sendQueryToAPI(messageText);
+      }
+    } finally {
+      // Always clear the processing flag
+      this.isProcessingMessage = false;
     }
   }
 
@@ -620,9 +633,23 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
    * Proceed to next step using feedback API
    */
   private async proceedToNextStep(userInput: string): Promise<void> {
+    // Prevent duplicate proceed calls
+    if (this.isProcessing || this.isFeedbackInProgress) {
+      console.warn('[WorkOrderModal] ⚠️ DUPLICATE PROCEED - Already processing');
+      return;
+    }
+    
+    // Check if we have a pending feedback request for this step
+    const proceedKey = `proceed-${this.currentSessionId}-${this.currentStepNumber}`;
+    if (this.pendingFeedback.has(proceedKey)) {
+      console.warn('[WorkOrderModal] ⚠️ DUPLICATE PROCEED REQUEST - Already in progress:', proceedKey);
+      return;
+    }
+    
     try {
       this.isProcessing = true;
       this.isFeedbackInProgress = true;
+      this.pendingFeedback.add(proceedKey);
       
       const userId = 1; // TODO: Get from AuthService
       
@@ -780,17 +807,22 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
           
           this.isFeedbackInProgress = false;
           this.isProcessing = false;
+          this.pendingFeedback.delete(proceedKey);
         },
         error: (error) => {
           console.error('[WorkOrderModal] Failed to proceed:', error);
           this.addMessage('Failed to proceed. Please try again.', 'bot');
           this.isFeedbackInProgress = false;
           this.isProcessing = false;
+          this.pendingFeedback.delete(proceedKey);
         }
       });
     } catch (error) {
       console.error('[WorkOrderModal] Error:', error);
       this.isFeedbackInProgress = false;
+      this.isProcessing = false;
+      const proceedKey = `proceed-${this.currentSessionId}-${this.currentStepNumber}`;
+      this.pendingFeedback.delete(proceedKey);
       this.isProcessing = false;
     }
   }
@@ -804,9 +836,23 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       console.warn('[WorkOrderModal] ⚠️ Cannot submit feedback - message missing sessionId or stepNumber:', message);
       return;
     }
+    
+    // Check if feedback is already being submitted for this message
+    const feedbackKey = `${message.sessionId}-${message.stepNumber}-${isPositive}`;
+    if (this.pendingFeedback.has(feedbackKey)) {
+      console.warn('[WorkOrderModal] ⚠️ DUPLICATE FEEDBACK - Already submitting:', feedbackKey);
+      return;
+    }
+    
+    // Check if feedback was already submitted
+    if (message.feedback) {
+      console.warn('[WorkOrderModal] ⚠️ Feedback already submitted for this message:', message.feedback);
+      return;
+    }
 
     const feedback = isPositive ? 'positive' : 'negative';
     this.isFeedbackInProgress = true;
+    this.pendingFeedback.add(feedbackKey);
 
     console.log('[WorkOrderModal] 📝 Submitting feedback:', { 
       sessionId: message.sessionId, 
@@ -832,10 +878,12 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         }
         
         this.isFeedbackInProgress = false;
+        this.pendingFeedback.delete(feedbackKey);
       },
       error: (error) => {
         console.error('[WorkOrderModal] Feedback error:', error);
         this.isFeedbackInProgress = false;
+        this.pendingFeedback.delete(feedbackKey);
       }
     });
   }
