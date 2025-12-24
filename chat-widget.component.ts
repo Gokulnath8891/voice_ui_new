@@ -177,7 +177,8 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           this.scrollToBottom();
 
           // Send transcribed text to API and get voice response
-          await this.sendTranscriptToAPI(finalTranscript, true);
+          // Pass userMessageAlreadyAdded=true since we just added it above
+          await this.sendTranscriptToAPI(finalTranscript, true, true);
           
           // Restart wake word listener after processing is complete
           this.startWakeWordListener();
@@ -218,7 +219,7 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
     console.warn('sendVoiceToAPI called but not used in speech recognition mode');
   }
 
-  private async sendTranscriptToAPI(transcript: string, isVoiceInput: boolean = false): Promise<void> {
+  private async sendTranscriptToAPI(transcript: string, isVoiceInput: boolean = false, userMessageAlreadyAdded: boolean = false): Promise<void> {
     try {
       // Reset auto-close timer on user interaction
       this.resetAutoCloseTimer();
@@ -226,6 +227,7 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
       console.log('[ChatWidget] 🔍 Processing transcript:', transcript);
       console.log('[ChatWidget] 📝 Transcript length:', transcript.length);
       console.log('[ChatWidget] 🎤 Is voice input:', isVoiceInput);
+      console.log('[ChatWidget] 💬 User message already added:', userMessageAlreadyAdded);
       
       // Check if this is a restart work order command (e.g., "restart work order 20241007")
       const restartPattern = /restart\s+(?:the\s+)?(?:work\s*order\s*|wo[-\s]?)(\d+)/i;
@@ -239,16 +241,18 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
         const workOrderNumber = restartMatch[1];
         console.log('[ChatWidget] Restart work order command detected:', workOrderNumber);
         
-        // Add user message to chat
-        this.messages.push({
-          text: transcript,
-          sender: 'user',
-          avatar: '👤',
-          isVoice: isVoiceInput,
-        });
-        
-        this.cdr.detectChanges();
-        this.scrollToBottom();
+        // Add user message only if not already added
+        if (!userMessageAlreadyAdded) {
+          this.messages.push({
+            text: transcript,
+            sender: 'user',
+            avatar: '👤',
+            isVoice: isVoiceInput,
+          });
+          
+          this.cdr.detectChanges();
+          this.scrollToBottom();
+        }
         
         // Stop widget voice recognition before navigating
         this.pauseVoiceRecognition();
@@ -286,16 +290,18 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
         console.log('[ChatWidget] ✅ Resume work order command detected:', workOrderNumber);
         console.log('[ChatWidget] 🎯 Extracted work order number:', workOrderNumber);
         
-        // Add user message to chat
-        this.messages.push({
-          text: transcript,
-          sender: 'user',
-          avatar: '👤',
-          isVoice: isVoiceInput,
-        });
-        
-        this.cdr.detectChanges();
-        this.scrollToBottom();
+        // Add user message only if not already added
+        if (!userMessageAlreadyAdded) {
+          this.messages.push({
+            text: transcript,
+            sender: 'user',
+            avatar: '👤',
+            isVoice: isVoiceInput,
+          });
+          
+          this.cdr.detectChanges();
+          this.scrollToBottom();
+        }
         
         // Stop widget voice recognition before navigating
         this.pauseVoiceRecognition();
@@ -341,16 +347,18 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
         console.log('[ChatWidget] ✅ Work order start command detected:', workOrderNumber);
         console.log('[ChatWidget] 🎯 Extracted work order number:', workOrderNumber);
         
-        // Add user message to chat
-        this.messages.push({
-          text: transcript,
-          sender: 'user',
-          avatar: '👤',
-          isVoice: isVoiceInput,
-        });
-        
-        this.cdr.detectChanges();
-        this.scrollToBottom();
+        // Add user message only if not already added
+        if (!userMessageAlreadyAdded) {
+          this.messages.push({
+            text: transcript,
+            sender: 'user',
+            avatar: '👤',
+            isVoice: isVoiceInput,
+          });
+          
+          this.cdr.detectChanges();
+          this.scrollToBottom();
+        }
         
         // Stop widget voice recognition before navigating
         this.pauseVoiceRecognition();
@@ -637,6 +645,8 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
         }
 
         // Add user message with voice indicator
+        // Note: For wake word detected commands, we need to add the message here
+        // because sendTranscriptToAPI will handle navigation commands specially
         this.messages.push({
           text: transcript,
           sender: 'user',
@@ -644,10 +654,12 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           isVoice: true
         });
 
+        this.cdr.detectChanges();
         this.scrollToBottom();
 
-        // Send to API and get response (mark as voice input)
-        await this.sendTranscriptToAPI(transcript, true);
+        // Send to API and get response (mark as voice input from wake word)
+        // Pass userMessageAlreadyAdded=true since we just added it above
+        await this.sendTranscriptToAPI(transcript, true, true);
       }
     );
   }
@@ -731,7 +743,8 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
     this.scrollToBottom();
 
     // Send to API and get response (not voice input)
-    await this.sendTranscriptToAPI(messageText, false);
+    // Pass userMessageAlreadyAdded=true since we just added it above
+    await this.sendTranscriptToAPI(messageText, false, true);
   }
 
   // ngOnDestroy() {
