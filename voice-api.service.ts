@@ -83,10 +83,11 @@ export class VoiceApiService {
   
   // Duplicate detection
   private lastApiCall: { workOrder: string; type: string; timestamp: number } | null = null;
-  private lastAgenticRagCall: { query: string; timestamp: number } | null = null;
-  private readonly API_DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
+  private lastAgenticRagCall: { query: string; timestamp: number; response: string } | null = null;
+  private readonly API_DUPLICATE_THRESHOLD_MS = 3000; // 3 seconds to allow for API response time
   private static callCounter = 0; // Global call counter across all instances
   private instanceId: string;
+  private pendingAgenticRagCalls: Map<string, Promise<string>> = new Map();
 
   constructor(
     private readonly http: HttpClient,
@@ -380,11 +381,39 @@ export class VoiceApiService {
    */
   async queryAgenticRag(query: string): Promise<string> {
     const callId = Math.random().toString(36).substring(7);
+    const queryKey = query.toLowerCase().trim();
     
+    console.log(`[VoiceAPI:${this.instanceId}] 🔍 queryAgenticRag [${callId}] START - query:`, query);
+    console.trace(`[VoiceAPI:${this.instanceId}] queryAgenticRag [${callId}] call stack`);
+    
+    // Check if there's already a pending call for this exact query
+    if (this.pendingAgenticRagCalls.has(queryKey)) {
+      console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE CALL [${callId}] DETECTED - Returning existing promise for:`, query);
+      return this.pendingAgenticRagCalls.get(queryKey)!;
+    }
+    
+    // Create the API call promise
+    const apiCallPromise = this.executeAgenticRagCall(query, callId);
+    
+    // Store the pending call
+    this.pendingAgenticRagCalls.set(queryKey, apiCallPromise);
+    
+    // Clean up after the call completes (success or failure)
+    apiCallPromise
+      .then(() => {
+        console.log(`[VoiceAPI:${this.instanceId}] ✅ Removing completed call [${callId}] from pending map`);
+        this.pendingAgenticRagCalls.delete(queryKey);
+      })
+      .catch(() => {
+        console.log(`[VoiceAPI:${this.instanceId}] ❌ Removing failed call [${callId}] from pending map`);
+        this.pendingAgenticRagCalls.delete(queryKey);
+      });
+    
+    return apiCallPromise;
+  }
+  
+  private async executeAgenticRagCall(query: string, callId: string): Promise<string> {
     try {
-      console.log(`[VoiceAPI:${this.instanceId}] 🔍 queryAgenticRag [${callId}] START - query:`, query);
-      console.trace(`[VoiceAPI:${this.instanceId}] queryAgenticRag [${callId}] call stack`);
-      
       // Get authentication token
       const token = this.authService.getToken();
       if (!token) {
