@@ -185,6 +185,19 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
         if (result.isFinal && result.transcript.trim()) {
           const finalTranscript = result.transcript.trim();
           
+          // CRITICAL: Check if we already processed this exact transcript recently
+          const now = Date.now();
+          const timeSinceLastProcess = now - this.lastProcessedTime;
+          const isSameTranscript = this.lastProcessedTranscript.toLowerCase().trim() === finalTranscript.toLowerCase().trim();
+          
+          if (isSameTranscript && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
+            console.warn('[ChatWidget] 🚫 DUPLICATE AZURE SPEECH RESULT - Ignoring:', {
+              transcript: finalTranscript,
+              timeSinceLastProcess: `${timeSinceLastProcess}ms`
+            });
+            return; // Don't process duplicate
+          }
+          
           // Stop recognition to process this result
           this.isRecording = false;
           await this.azureSpeechService.stopContinuousRecognition();

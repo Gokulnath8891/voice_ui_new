@@ -81,12 +81,13 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
   // Duplicate detection
   private lastProcessedMessage = '';
   private lastProcessedTime = 0;
-  private readonly DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
+  private readonly DUPLICATE_THRESHOLD_MS = 3000; // 3 seconds - increased threshold
   private isProcessingMessage = false; // Flag to prevent concurrent processing
   private pendingFeedback = new Set<string>(); // Track pending feedback requests
   
   // Static global locks to prevent ANY duplicate API calls across all instances
   private static activeApiCalls = new Map<string, Promise<any>>();
+  private static isAnyModalProcessing = false; // Global flag to prevent ANY modal from processing simultaneously
 
   constructor(
     private readonly workOrderService: WorkOrderService,
@@ -446,6 +447,7 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
    */
   private initializeAzureSpeech(): void {
     console.log('[WorkOrderModal] 🎤 Initializing Azure Speech Service');
+    console.trace('[WorkOrderModal] 📍 initializeAzureSpeech call stack');
     
     // Unsubscribe from any existing subscriptions to prevent duplicates
     if (this.azureSpeechResultSubscription) {
@@ -474,6 +476,25 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         // Only process final results
         if (result.isFinal && result.transcript.trim()) {
           const finalTranscript = result.transcript.trim();
+          
+          // CRITICAL: Check if we already processed this exact transcript recently
+          const now = Date.now();
+          const timeSinceLastProcess = now - this.lastProcessedTime;
+          const isSameTranscript = this.lastProcessedMessage.toLowerCase() === finalTranscript.toLowerCase();
+          
+          if (isSameTranscript && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
+            console.warn('[WorkOrderModal] 🚫 DUPLICATE AZURE SPEECH RESULT - Ignoring:', {
+              transcript: finalTranscript,
+              timeSinceLastProcess: `${timeSinceLastProcess}ms`
+            });
+            return; // Don't process duplicate
+          }
+          
+          // CRITICAL: Check if we're already processing a message
+          if (this.isProcessingMessage) {
+            console.warn('[WorkOrderModal] 🚫 ALREADY PROCESSING - Ignoring Azure Speech result:', finalTranscript);
+            return;
+          }
           
           // Stop recognition to process this result
           this.isRecording = false;
@@ -538,36 +559,56 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
    * Send message
    */
   async sendMessage(): Promise<void> {
-    if (!this.userInput.trim() || this.isProcessing || this.isProcessingMessage) {
-      console.log('[WorkOrderModal] ⚠️ Skipping sendMessage - already processing or empty input');
-      return;
-    }
-
     const messageText = this.userInput.trim();
     
-    // Prevent duplicate processing of the same message within a short time window
+    // FIRST: Check if ANY modal is currently processing (global check)
+    if (WorkOrderModalComponent.isAnyModalProcessing) {
+      console.warn('[WorkOrderModal] 🚫 BLOCKED GLOBALLY - Another modal is processing. Ignoring:', messageText);
+      this.userInput = ''; // Clear input
+      return;
+    }
+    
+    // SECOND: Check if we're already processing ANY message (instance check)
+    if (this.isProcessingMessage) {
+      console.warn('[WorkOrderModal] 🚫 BLOCKED - Already processing a message. Ignoring:', messageText);
+      this.userInput = ''; // Clear input
+      return;
+    }
+    
+    // THIRD: Check for empty input
+    if (!messageText) {
+      console.log('[WorkOrderModal] ⚠️ Skipping sendMessage - empty input');
+      return;
+    }
+    
+    // FOURTH: Set processing flags IMMEDIATELY before any other checks
+    WorkOrderModalComponent.isAnyModalProcessing = true;
+    this.isProcessingMessage = true;
+    
+    // FIFTH: Check for duplicate message content within time window
     const now = Date.now();
     const timeSinceLastProcess = now - this.lastProcessedTime;
-    const isSameMessage = this.lastProcessedMessage.toLowerCase().trim() === messageText.toLowerCase().trim();
+    const isSameMessage = this.lastProcessedMessage.toLowerCase() === messageText.toLowerCase();
     
     if (isSameMessage && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
-      console.warn('[WorkOrderModal] ⚠️ DUPLICATE MESSAGE DETECTED - Ignoring:', {
+      console.warn('[WorkOrderModal] ⚠️ DUPLICATE MESSAGE CONTENT DETECTED - Ignoring:', {
         message: messageText,
         timeSinceLastProcess: `${timeSinceLastProcess}ms`,
         threshold: `${this.DUPLICATE_THRESHOLD_MS}ms`
       });
-      this.userInput = ''; // Clear input even for duplicate
+      this.userInput = ''; // Clear input
+      WorkOrderModalComponent.isAnyModalProcessing = false; // Reset global flag
+      this.isProcessingMessage = false; // Reset instance flag
       return;
     }
-    
-    // Set processing flag IMMEDIATELY to block concurrent calls
-    this.isProcessingMessage = true;
     
     // Update tracking
     this.lastProcessedMessage = messageText;
     this.lastProcessedTime = now;
     
     this.userInput = '';
+    
+    console.log('[WorkOrderModal] ✅ Processing message:', messageText);
 
     // Add user message
     this.addMessage(messageText, 'user', false);
@@ -583,7 +624,8 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         await this.sendQueryToAPI(messageText);
       }
     } finally {
-      // Always clear the processing flag
+      // Always clear ALL processing flags
+      WorkOrderModalComponent.isAnyModalProcessing = false;
       this.isProcessingMessage = false;
     }
   }
