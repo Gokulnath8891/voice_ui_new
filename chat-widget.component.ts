@@ -41,6 +41,9 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
   private readonly mediaRecorder: MediaRecorder | null = null;
   private readonly audioChunks: Blob[] = [];
   private recognition: any = null;
+  private lastProcessedTranscript = '';
+  private lastProcessedTime = 0;
+  private readonly DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
   private autoOpenTimer: any = null;
   private autoCloseTimer: any = null;
   private readonly AUTO_CLOSE_DELAY = 30000; // 30 seconds
@@ -221,6 +224,24 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
 
   private async sendTranscriptToAPI(transcript: string, isVoiceInput: boolean = false, userMessageAlreadyAdded: boolean = false): Promise<void> {
     try {
+      // Prevent duplicate processing of the same transcript within a short time window
+      const now = Date.now();
+      const timeSinceLastProcess = now - this.lastProcessedTime;
+      const isSameTranscript = this.lastProcessedTranscript.toLowerCase().trim() === transcript.toLowerCase().trim();
+      
+      if (isSameTranscript && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
+        console.warn('[ChatWidget] ⚠️ DUPLICATE DETECTED - Ignoring repeated transcript:', {
+          transcript,
+          timeSinceLastProcess: `${timeSinceLastProcess}ms`,
+          threshold: `${this.DUPLICATE_THRESHOLD_MS}ms`
+        });
+        return;
+      }
+      
+      // Update tracking
+      this.lastProcessedTranscript = transcript;
+      this.lastProcessedTime = now;
+      
       // Reset auto-close timer on user interaction
       this.resetAutoCloseTimer();
       
@@ -401,8 +422,9 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
       this.cdr.detectChanges(); // Force immediate UI update
       this.scrollToBottom();
 
-      // Get response from chat API
-      const botResponse = await this.voiceApiService.sendTextToAPI(transcript);
+      // Get response from chat API, passing the input type
+      console.log('[ChatWidget] 🔵 Calling sendTextToAPI with isVoiceInput:', isVoiceInput);
+      const botResponse = await this.voiceApiService.sendTextToAPI(transcript, isVoiceInput);
 
       // Increment step number for tracking
       this.currentStepNumber++;
