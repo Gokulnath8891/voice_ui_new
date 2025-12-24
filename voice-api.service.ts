@@ -80,6 +80,10 @@ export class VoiceApiService {
   private readonly CHAT_ENDPOINT = `${this.API_BASE_URL}/chat`;
   private readonly CHAT_QUERY_ENDPOINT = `${environment.apiUrl}/chat/query/`;
   private readonly AGENTIC_RAG_ENDPOINT = `${environment.apiUrl}/agentic-rag/query/`;
+  
+  // Duplicate detection
+  private lastApiCall: { workOrder: string; type: string; timestamp: number } | null = null;
+  private readonly API_DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
 
   constructor(
     private readonly http: HttpClient,
@@ -206,6 +210,32 @@ export class VoiceApiService {
     try {
       console.log('[VoiceAPI] 🚀 startWorkOrder called:', { workOrderNumber, userId, type });
       console.trace('[VoiceAPI] Call stack trace');
+      
+      // Check for duplicate API calls
+      const now = Date.now();
+      if (this.lastApiCall) {
+        const timeSinceLastCall = now - this.lastApiCall.timestamp;
+        const isSameWorkOrder = this.lastApiCall.workOrder === workOrderNumber;
+        
+        if (isSameWorkOrder && timeSinceLastCall < this.API_DUPLICATE_THRESHOLD_MS) {
+          console.warn('[VoiceAPI] ⚠️ DUPLICATE API CALL BLOCKED:', {
+            workOrderNumber,
+            type,
+            lastCallType: this.lastApiCall.type,
+            timeSinceLastCall: `${timeSinceLastCall}ms`,
+            threshold: `${this.API_DUPLICATE_THRESHOLD_MS}ms`
+          });
+          
+          // Return a cached/dummy response to avoid actual duplicate API call
+          return {
+            type: 'error',
+            message: 'Duplicate request detected and blocked to prevent double processing.'
+          };
+        }
+      }
+      
+      // Update last API call tracker
+      this.lastApiCall = { workOrder: workOrderNumber, type, timestamp: now };
       
       // Get authentication token
       const token = this.authService.getToken();
