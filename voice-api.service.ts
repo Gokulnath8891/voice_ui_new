@@ -88,6 +88,10 @@ export class VoiceApiService {
   private static callCounter = 0; // Global call counter across all instances
   private instanceId: string;
   private pendingAgenticRagCalls: Map<string, Promise<string>> = new Map();
+  
+  // Static global locks to prevent duplicate API calls across all service instances
+  private static pendingWorkOrderCalls = new Map<string, Promise<WorkOrderStartResponse>>();
+  private static pendingChatQueryCalls = new Map<string, Promise<string>>();
 
   constructor(
     private readonly http: HttpClient,
@@ -218,18 +222,60 @@ export class VoiceApiService {
    * Start work order via chat API
    */
   async startWorkOrder(workOrderNumber: string, userId: number, type: 'text' | 'voice'): Promise<WorkOrderStartResponse> {
+    const workOrderKey = `${workOrderNumber}-${userId}-${type}`;
+    
+    console.log(`[VoiceAPI:${this.instanceId}] 🚀 startWorkOrder called:`, { workOrderNumber, userId, type, workOrderKey });
+    console.trace(`[VoiceAPI:${this.instanceId}] Call stack trace`);
+    
+    // CRITICAL: Check if this exact work order call is already in progress GLOBALLY
+    if (VoiceApiService.pendingWorkOrderCalls.has(workOrderKey)) {
+      console.warn(`[VoiceAPI:${this.instanceId}] ⛔ DUPLICATE WORK ORDER CALL BLOCKED GLOBALLY - Already in progress:`, {
+        workOrderNumber,
+        userId,
+        type,
+        workOrderKey
+      });
+      // Return the existing promise instead of making a duplicate call
+      return VoiceApiService.pendingWorkOrderCalls.get(workOrderKey)!;
+    }
+    
+    // Create the API call promise
+    const apiCallPromise = this.executeWorkOrderCall(workOrderNumber, userId, type, workOrderKey);
+    
+    // Store the pending call GLOBALLY
+    VoiceApiService.pendingWorkOrderCalls.set(workOrderKey, apiCallPromise);
+    
+    // Clean up after the call completes (success or failure)
+    apiCallPromise
+      .then((response) => {
+        console.log(`[VoiceAPI:${this.instanceId}] ✅ Work order call completed [${workOrderKey}] - Removing from pending map`);
+        VoiceApiService.pendingWorkOrderCalls.delete(workOrderKey);
+        return response;
+      })
+      .catch((error) => {
+        console.log(`[VoiceAPI:${this.instanceId}] ❌ Work order call failed [${workOrderKey}] - Removing from pending map`);
+        VoiceApiService.pendingWorkOrderCalls.delete(workOrderKey);
+        throw error;
+      });
+    
+    return apiCallPromise;
+  }
+  
+  /**
+   * Execute the actual work order API call
+   */
+  private async executeWorkOrderCall(workOrderNumber: string, userId: number, type: 'text' | 'voice', workOrderKey: string): Promise<WorkOrderStartResponse> {
     try {
-      console.log(`[VoiceAPI:${this.instanceId}] 🚀 startWorkOrder called:`, { workOrderNumber, userId, type });
-      console.trace(`[VoiceAPI:${this.instanceId}] Call stack trace`);
+      console.log(`[VoiceAPI:${this.instanceId}] 📞 Executing work order API call [${workOrderKey}]`);
       
-      // Check for duplicate API calls
+      // Check for duplicate API calls (legacy check - now redundant with global lock)
       const now = Date.now();
       if (this.lastApiCall) {
         const timeSinceLastCall = now - this.lastApiCall.timestamp;
         const isSameWorkOrder = this.lastApiCall.workOrder === workOrderNumber;
         
         if (isSameWorkOrder && timeSinceLastCall < this.API_DUPLICATE_THRESHOLD_MS) {
-          console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE API CALL BLOCKED:`, {
+          console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE API CALL BLOCKED (Timestamp check):`, {
             workOrderNumber,
             type,
             lastCallType: this.lastApiCall.type,
@@ -237,7 +283,7 @@ export class VoiceApiService {
             threshold: `${this.API_DUPLICATE_THRESHOLD_MS}ms`
           });
           
-          // Return a cached/dummy response to avoid actual duplicate API call
+          // Return error response
           return {
             type: 'error',
             message: 'Duplicate request detected and blocked to prevent double processing.'
@@ -260,8 +306,8 @@ export class VoiceApiService {
         type
       };
 
-      console.log('[VoiceAPI] 📤 Sending request to:', this.CHAT_QUERY_ENDPOINT);
-      console.log('[VoiceAPI] 📦 Payload:', payload);
+      console.log(`[VoiceAPI:${this.instanceId}] 📤 Sending request to:`, this.CHAT_QUERY_ENDPOINT);
+      console.log(`[VoiceAPI:${this.instanceId}] 📦 Payload:`, payload);
 
       const response = await fetch(this.CHAT_QUERY_ENDPOINT, {
         method: 'POST',
@@ -281,7 +327,7 @@ export class VoiceApiService {
 
       const result: WorkOrderStartResponse = await response.json();
       
-      console.log('[VoiceAPI] 📥 Response received:', result);
+      console.log(`[VoiceAPI:${this.instanceId}] 📥 Response received:`, result);
       
       // Store session ID for future feedback submissions
       if (result.session_id) {
@@ -291,7 +337,7 @@ export class VoiceApiService {
       
       return result;
     } catch (error) {
-      console.error('Work order start API error:', error);
+      console.error(`[VoiceAPI:${this.instanceId}] Work order start API error:`, error);
       return {
         type: 'error',
         message: 'Failed to start work order. Please try again.'
