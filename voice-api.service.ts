@@ -84,12 +84,19 @@ export class VoiceApiService {
   // Duplicate detection
   private lastApiCall: { workOrder: string; type: string; timestamp: number } | null = null;
   private readonly API_DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
+  private static callCounter = 0; // Global call counter across all instances
+  private instanceId: string;
 
   constructor(
     private readonly http: HttpClient,
     private readonly authService: AuthService,
     private readonly feedbackService: FeedbackService
-  ) {}
+  ) {
+    this.instanceId = Math.random().toString(36).substring(7);
+    VoiceApiService.callCounter++;
+    console.log(`[VoiceAPI] 🏗️ Service instance created [${this.instanceId}] - Total instances: ${VoiceApiService.callCounter}`);
+    console.trace('[VoiceAPI] Service instantiation stack');
+  }
 
   async sendVoiceMessage(transcribedText: string): Promise<{ response: string; audioResponse?: Blob }> {
     try {
@@ -130,7 +137,9 @@ export class VoiceApiService {
 
   async sendTextToAPI(text: string, isVoiceInput: boolean = false): Promise<string> {
     try {
-      console.log('[VoiceAPI] 🔵 sendTextToAPI called with:', { text, isVoiceInput });
+      const callId = Math.random().toString(36).substring(7);
+      console.log(`[VoiceAPI:${this.instanceId}] 🔵 sendTextToAPI START [${callId}]`, { text, isVoiceInput });
+      console.trace(`[VoiceAPI:${this.instanceId}] Call stack for [${callId}]`);
       
       // Check if this is a "proceed" or "completed" command for next step
       const nextStepPattern = /(?:proceed|continue|next|move\s+to\s+next|completed?)\s+(?:step|to\s+step)?/i;
@@ -167,12 +176,12 @@ export class VoiceApiService {
       }
       
       if (workOrderNumber) {
-        console.log('[VoiceAPI] 📋 Final work order number:', workOrderNumber);
+        console.log('[VoiceAPI:' + this.instanceId + '] 📋 Final work order number:', workOrderNumber);
         const userId = 1; // TODO: Get from auth service
         
         // Determine the type based on input method
         const inputType: 'text' | 'voice' = isVoiceInput ? 'voice' : 'text';
-        console.log('[VoiceAPI] 📞 Calling startWorkOrder with type:', inputType);
+        console.log('[VoiceAPI:' + this.instanceId + '] 📞 Calling startWorkOrder with type:', inputType);
         
         // Call the work order start API
         const workOrderResponse = await this.startWorkOrder(workOrderNumber, userId, inputType);
@@ -208,8 +217,8 @@ export class VoiceApiService {
    */
   async startWorkOrder(workOrderNumber: string, userId: number, type: 'text' | 'voice'): Promise<WorkOrderStartResponse> {
     try {
-      console.log('[VoiceAPI] 🚀 startWorkOrder called:', { workOrderNumber, userId, type });
-      console.trace('[VoiceAPI] Call stack trace');
+      console.log(`[VoiceAPI:${this.instanceId}] 🚀 startWorkOrder called:`, { workOrderNumber, userId, type });
+      console.trace(`[VoiceAPI:${this.instanceId}] Call stack trace`);
       
       // Check for duplicate API calls
       const now = Date.now();
@@ -218,7 +227,7 @@ export class VoiceApiService {
         const isSameWorkOrder = this.lastApiCall.workOrder === workOrderNumber;
         
         if (isSameWorkOrder && timeSinceLastCall < this.API_DUPLICATE_THRESHOLD_MS) {
-          console.warn('[VoiceAPI] ⚠️ DUPLICATE API CALL BLOCKED:', {
+          console.warn(`[VoiceAPI:${this.instanceId}] ⚠️ DUPLICATE API CALL BLOCKED:`, {
             workOrderNumber,
             type,
             lastCallType: this.lastApiCall.type,

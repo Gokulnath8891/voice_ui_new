@@ -76,7 +76,9 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
     private readonly workOrderActionService: WorkOrderActionService,
     private readonly azureSpeechService: AzureSpeechService
   ) {
-    console.log('[ChatWidget] Component constructor called');
+    const instanceId = Math.random().toString(36).substring(7);
+    console.log(`[ChatWidget] 🏗️ Component constructor called [Instance: ${instanceId}]`);
+    console.trace('[ChatWidget] Constructor call stack');
     this.initializeMediaRecorder();
     this.initializeAzureSpeech();
   }
@@ -154,6 +156,25 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
 
   private initializeAzureSpeech() {
     console.log('[ChatWidget] 🎤 Initializing Azure Speech Service');
+    
+    // Unsubscribe from any existing subscriptions to prevent duplicates
+    if (this.azureSpeechResultSubscription) {
+      console.warn('[ChatWidget] ⚠️ Found existing Azure Speech result subscription - unsubscribing');
+      this.azureSpeechResultSubscription.unsubscribe();
+      this.azureSpeechResultSubscription = null;
+    }
+    
+    if (this.azureSpeechErrorSubscription) {
+      console.warn('[ChatWidget] ⚠️ Found existing Azure Speech error subscription - unsubscribing');
+      this.azureSpeechErrorSubscription.unsubscribe();
+      this.azureSpeechErrorSubscription = null;
+    }
+    
+    if (this.azureSpeechEndSubscription) {
+      console.warn('[ChatWidget] ⚠️ Found existing Azure Speech end subscription - unsubscribing');
+      this.azureSpeechEndSubscription.unsubscribe();
+      this.azureSpeechEndSubscription = null;
+    }
     
     // Subscribe to recognition results
     this.azureSpeechResultSubscription = this.azureSpeechService.onResult$.subscribe(
