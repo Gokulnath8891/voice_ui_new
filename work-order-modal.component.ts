@@ -84,6 +84,9 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
   private readonly DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
   private isProcessingMessage = false; // Flag to prevent concurrent processing
   private pendingFeedback = new Set<string>(); // Track pending feedback requests
+  
+  // Static global locks to prevent ANY duplicate API calls across all instances
+  private static activeApiCalls = new Map<string, Promise<any>>();
 
   constructor(
     private readonly workOrderService: WorkOrderService,
@@ -589,12 +592,24 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
    * Send general query to API
    */
   private async sendQueryToAPI(query: string): Promise<void> {
+    const callKey = `query-${query.toLowerCase().trim()}`;
+    
+    // Check if this exact call is already in progress globally
+    if (WorkOrderModalComponent.activeApiCalls.has(callKey)) {
+      console.warn('[WorkOrderModal] ⛔ DUPLICATE QUERY API CALL BLOCKED - Already in progress:', query);
+      return;
+    }
+    
     try {
       this.isProcessing = true;
       this.cdr.detectChanges();
 
+      // Create the API call promise and store it
+      const apiPromise = this.voiceApiService.sendTextToAPI(query, false);
+      WorkOrderModalComponent.activeApiCalls.set(callKey, apiPromise);
+      
       // Get response from chat API
-      const botResponse = await this.voiceApiService.sendTextToAPI(query, false);
+      const botResponse = await apiPromise;
 
       // DON'T increment stepNumber here - this is not a tracked workflow step
       // Only work order start/proceed responses should have step numbers for feedback
@@ -626,6 +641,9 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       
       // Restart wake word listener even on error
       setTimeout(() => this.startModalWakeWordListener(), 500);
+    } finally {
+      // Always clean up the active call
+      WorkOrderModalComponent.activeApiCalls.delete(callKey);
     }
   }
 
@@ -643,6 +661,13 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
     const proceedKey = `proceed-${this.currentSessionId}-${this.currentStepNumber}`;
     if (this.pendingFeedback.has(proceedKey)) {
       console.warn('[WorkOrderModal] ⚠️ DUPLICATE PROCEED REQUEST - Already in progress:', proceedKey);
+      return;
+    }
+    
+    // Global lock to prevent duplicate across all instances
+    const globalKey = `feedback-${this.currentSessionId}-${this.currentStepNumber}`;
+    if (WorkOrderModalComponent.activeApiCalls.has(globalKey)) {
+      console.error('[WorkOrderModal] ⛔ DUPLICATE FEEDBACK API CALL BLOCKED GLOBALLY:', globalKey);
       return;
     }
     
@@ -669,9 +694,16 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
             userId
           );
       
+      // Convert observable to promise and store in global lock
+      const feedbackPromise = feedbackObservable.toPromise();
+      WorkOrderModalComponent.activeApiCalls.set(globalKey, feedbackPromise);
+      
       feedbackObservable.subscribe({
         next: async (response) => {
           console.log('[WorkOrderModal] Next step response:', response);
+          
+          // Clean up global lock on success
+          WorkOrderModalComponent.activeApiCalls.delete(globalKey);
           
           // Update step ID if provided (for resumed work orders)
           // Use next_step for resumed work orders, current_step for chat-started
@@ -815,6 +847,7 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
           this.isFeedbackInProgress = false;
           this.isProcessing = false;
           this.pendingFeedback.delete(proceedKey);
+          WorkOrderModalComponent.activeApiCalls.delete(globalKey); // Clean up global lock
         }
       });
     } catch (error) {
@@ -823,6 +856,8 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       this.isProcessing = false;
       const proceedKey = `proceed-${this.currentSessionId}-${this.currentStepNumber}`;
       this.pendingFeedback.delete(proceedKey);
+      const globalKey = `feedback-${this.currentSessionId}-${this.currentStepNumber}`;
+      WorkOrderModalComponent.activeApiCalls.delete(globalKey); // Clean up global lock
       this.isProcessing = false;
     }
   }
