@@ -272,31 +272,19 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           this.scrollToBottom();
         }
         
-        // Stop widget voice recognition
+        // Stop widget voice recognition before navigating
         this.pauseVoiceRecognition();
         
         // Close the chat widget
         this.toggleChat();
         
-        // Trigger the action - this will open the modal
-        const fullWorkOrderNumber = `WO-${workOrderNumber}`;
-        console.log('[ChatWidget] 🚀 Triggering RESTART action for:', fullWorkOrderNumber);
-        this.workOrderActionService.triggerAction(fullWorkOrderNumber, 'restart');
+        // Trigger the action immediately via service (for instant modal opening)
+        this.workOrderActionService.triggerAction(`WO-${workOrderNumber}`, 'restart');
         
-        // ALSO store in sessionStorage as backup (for when navigating to page)
-        sessionStorage.setItem('pending_work_order_action', JSON.stringify({
-          orderNumber: fullWorkOrderNumber,
-          action: 'restart'
-        }));
-        console.log('[ChatWidget] ✅ Action triggered and stored in sessionStorage');
-        
-        // Navigate to work orders page
         setTimeout(() => {
-          console.log('[ChatWidget] 📍 Navigating to /work-order...');
-          this.router.navigate(['/work-order']).then(() => {
-            console.log('[ChatWidget] ✅ Navigation completed');
-          });
-        }, 300);
+          console.log('[ChatWidget] Navigating to work orders for restart:', `WO-${workOrderNumber}`);
+          this.router.navigate(['/work-order']);
+        }, 300); // Small delay to allow widget to close smoothly
         
         return;
       }
@@ -322,31 +310,19 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           this.scrollToBottom();
         }
         
-        // Stop widget voice recognition
+        // Stop widget voice recognition before navigating
         this.pauseVoiceRecognition();
         
         // Close the chat widget
         this.toggleChat();
         
-        // Trigger the action - this will open the modal
-        const fullWorkOrderNumber = `WO-${workOrderNumber}`;
-        console.log('[ChatWidget] 🚀 Triggering RESUME action for:', fullWorkOrderNumber);
-        this.workOrderActionService.triggerAction(fullWorkOrderNumber, 'resume');
+        // Trigger the action immediately via service (for instant modal opening)
+        this.workOrderActionService.triggerAction(`WO-${workOrderNumber}`, 'resume');
         
-        // ALSO store in sessionStorage as backup (for when navigating to page)
-        sessionStorage.setItem('pending_work_order_action', JSON.stringify({
-          orderNumber: fullWorkOrderNumber,
-          action: 'resume'
-        }));
-        console.log('[ChatWidget] ✅ Action triggered and stored in sessionStorage');
-        
-        // Navigate to work orders page
         setTimeout(() => {
-          console.log('[ChatWidget] 📍 Navigating to /work-order...');
-          this.router.navigate(['/work-order']).then(() => {
-            console.log('[ChatWidget] ✅ Navigation completed');
-          });
-        }, 300);
+          console.log('[ChatWidget] Navigating to work orders for resume:', `WO-${workOrderNumber}`);
+          this.router.navigate(['/work-order']);
+        }, 300); // Small delay to allow widget to close smoothly
         
         return;
       }
@@ -359,14 +335,18 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
       const helpPattern = /help\s+me\s+(?:to\s+)?fix\s+(?:work\s*order\s*|wo[-\s]?)(\d+)/i;
       const startPattern = /start\s+(?:work\s*order\s*|work\s+)(\d+)/i;
       
+      console.log('[ChatWidget] � Checking start/help patterns...');
       const helpMatch = transcript.match(helpPattern);
       const startMatch = transcript.match(startPattern);
+      console.log('[ChatWidget] Help pattern match:', helpMatch);
+      console.log('[ChatWidget] Start pattern match:', startMatch);
       
       const workOrderMatch = helpMatch || startMatch;
       
       if (workOrderMatch) {
         const workOrderNumber = workOrderMatch[1];
         console.log('[ChatWidget] ✅ Work order start command detected:', workOrderNumber);
+        console.log('[ChatWidget] 🎯 Extracted work order number:', workOrderNumber);
         
         // Add user message only if not already added
         if (!userMessageAlreadyAdded) {
@@ -381,31 +361,19 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           this.scrollToBottom();
         }
         
-        // Stop widget voice recognition
+        // Stop widget voice recognition before navigating
         this.pauseVoiceRecognition();
         
         // Close the chat widget
         this.toggleChat();
         
-        // Trigger the action - this will open the modal
-        const fullWorkOrderNumber = `WO-${workOrderNumber}`;
-        console.log('[ChatWidget] 🚀 Triggering START action for:', fullWorkOrderNumber);
-        this.workOrderActionService.triggerAction(fullWorkOrderNumber, 'start');
+        // Trigger the action immediately via service (for instant modal opening)
+        this.workOrderActionService.triggerAction(`WO-${workOrderNumber}`, 'start');
         
-        // ALSO store in sessionStorage as backup (for when navigating to page)
-        sessionStorage.setItem('pending_work_order_action', JSON.stringify({
-          orderNumber: fullWorkOrderNumber,
-          action: 'start'
-        }));
-        console.log('[ChatWidget] ✅ Action triggered and stored in sessionStorage');
-        
-        // Navigate to work orders page
         setTimeout(() => {
-          console.log('[ChatWidget] 📍 Navigating to /work-order...');
-          this.router.navigate(['/work-order']).then(() => {
-            console.log('[ChatWidget] ✅ Navigation completed');
-          });
-        }, 300); // Delay to allow widget to close smoothly
+          console.log('[ChatWidget] Navigating to work orders for start:', `WO-${workOrderNumber}`);
+          this.router.navigate(['/work-order']);
+        }, 300); // Small delay to allow widget to close smoothly
         
         return;
       }
