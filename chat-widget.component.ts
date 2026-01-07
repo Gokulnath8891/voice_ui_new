@@ -40,10 +40,6 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
   isFeedbackInProgress = false; // Track if feedback is being submitted
   private readonly mediaRecorder: MediaRecorder | null = null;
   private readonly audioChunks: Blob[] = [];
-  private recognition: any = null;
-  private lastProcessedTranscript = '';
-  private lastProcessedTime = 0;
-  private readonly DUPLICATE_THRESHOLD_MS = 2000; // 2 seconds
   private autoOpenTimer: any = null;
   private autoCloseTimer: any = null;
   private readonly AUTO_CLOSE_DELAY = 30000; // 30 seconds
@@ -185,18 +181,7 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
         if (result.isFinal && result.transcript.trim()) {
           const finalTranscript = result.transcript.trim();
           
-          // CRITICAL: Check if we already processed this exact transcript recently
-          const now = Date.now();
-          const timeSinceLastProcess = now - this.lastProcessedTime;
-          const isSameTranscript = this.lastProcessedTranscript.toLowerCase().trim() === finalTranscript.toLowerCase().trim();
-          
-          if (isSameTranscript && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
-            console.warn('[ChatWidget] 🚫 DUPLICATE AZURE SPEECH RESULT - Ignoring:', {
-              transcript: finalTranscript,
-              timeSinceLastProcess: `${timeSinceLastProcess}ms`
-            });
-            return; // Don't process duplicate
-          }
+          console.log('[ChatWidget] ✅ Processing Azure Speech final result:', finalTranscript);
           
           // Stop recognition to process this result
           this.isRecording = false;
@@ -258,24 +243,6 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
 
   private async sendTranscriptToAPI(transcript: string, isVoiceInput: boolean = false, userMessageAlreadyAdded: boolean = false): Promise<void> {
     try {
-      // Prevent duplicate processing of the same transcript within a short time window
-      const now = Date.now();
-      const timeSinceLastProcess = now - this.lastProcessedTime;
-      const isSameTranscript = this.lastProcessedTranscript.toLowerCase().trim() === transcript.toLowerCase().trim();
-      
-      if (isSameTranscript && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
-        console.warn('[ChatWidget] ⚠️ DUPLICATE DETECTED - Ignoring repeated transcript:', {
-          transcript,
-          timeSinceLastProcess: `${timeSinceLastProcess}ms`,
-          threshold: `${this.DUPLICATE_THRESHOLD_MS}ms`
-        });
-        return;
-      }
-      
-      // Update tracking
-      this.lastProcessedTranscript = transcript;
-      this.lastProcessedTime = now;
-      
       // Reset auto-close timer on user interaction
       this.resetAutoCloseTimer();
       
@@ -288,13 +255,9 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
       const restartPattern = /restart\s+(?:the\s+)?(?:work\s*order\s*|wo[-\s]?)(\d+)/i;
       const restartMatch = transcript.match(restartPattern);
       
-      console.log('[ChatWidget] 🔄 Checking restart pattern...');
-      console.log('[ChatWidget] Pattern:', restartPattern);
-      console.log('[ChatWidget] Match result:', restartMatch);
-      
       if (restartMatch) {
         const workOrderNumber = restartMatch[1];
-        console.log('[ChatWidget] Restart work order command detected:', workOrderNumber);
+        console.log('[ChatWidget] ✅ Restart work order command detected:', workOrderNumber);
         
         // Add user message only if not already added
         if (!userMessageAlreadyAdded) {
@@ -309,25 +272,31 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           this.scrollToBottom();
         }
         
-        // Stop widget voice recognition before navigating
+        // Stop widget voice recognition
         this.pauseVoiceRecognition();
         
         // Close the chat widget
         this.toggleChat();
         
-        // Trigger the action immediately via service (for instant modal opening)
-        this.workOrderActionService.triggerAction(`WO-${workOrderNumber}`, 'restart');
+        // Trigger the action - this will open the modal
+        const fullWorkOrderNumber = `WO-${workOrderNumber}`;
+        console.log('[ChatWidget] 🚀 Triggering RESTART action for:', fullWorkOrderNumber);
+        this.workOrderActionService.triggerAction(fullWorkOrderNumber, 'restart');
         
-        // Also store in sessionStorage as backup
+        // ALSO store in sessionStorage as backup (for when navigating to page)
         sessionStorage.setItem('pending_work_order_action', JSON.stringify({
-          orderNumber: `WO-${workOrderNumber}`,
+          orderNumber: fullWorkOrderNumber,
           action: 'restart'
         }));
+        console.log('[ChatWidget] ✅ Action triggered and stored in sessionStorage');
         
+        // Navigate to work orders page
         setTimeout(() => {
-          console.log('[ChatWidget] Navigating to work orders for restart:', `WO-${workOrderNumber}`);
-          this.router.navigate(['/work-order']);
-        }, 300); // Small delay to allow widget to close smoothly
+          console.log('[ChatWidget] 📍 Navigating to /work-order...');
+          this.router.navigate(['/work-order']).then(() => {
+            console.log('[ChatWidget] ✅ Navigation completed');
+          });
+        }, 300);
         
         return;
       }
@@ -336,14 +305,9 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
       const resumePattern = /resume\s+(?:the\s+)?(?:work\s*order\s*|wo[-\s]?)(\d+)/i;
       const resumeMatch = transcript.match(resumePattern);
       
-      console.log('[ChatWidget] ▶️ Checking resume pattern...');
-      console.log('[ChatWidget] Pattern:', resumePattern);
-      console.log('[ChatWidget] Match result:', resumeMatch);
-      
       if (resumeMatch) {
         const workOrderNumber = resumeMatch[1];
         console.log('[ChatWidget] ✅ Resume work order command detected:', workOrderNumber);
-        console.log('[ChatWidget] 🎯 Extracted work order number:', workOrderNumber);
         
         // Add user message only if not already added
         if (!userMessageAlreadyAdded) {
@@ -358,25 +322,31 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           this.scrollToBottom();
         }
         
-        // Stop widget voice recognition before navigating
+        // Stop widget voice recognition
         this.pauseVoiceRecognition();
         
         // Close the chat widget
         this.toggleChat();
         
-        // Trigger the action immediately via service (for instant modal opening)
-        this.workOrderActionService.triggerAction(`WO-${workOrderNumber}`, 'resume');
+        // Trigger the action - this will open the modal
+        const fullWorkOrderNumber = `WO-${workOrderNumber}`;
+        console.log('[ChatWidget] 🚀 Triggering RESUME action for:', fullWorkOrderNumber);
+        this.workOrderActionService.triggerAction(fullWorkOrderNumber, 'resume');
         
-        // Also store in sessionStorage as backup
+        // ALSO store in sessionStorage as backup (for when navigating to page)
         sessionStorage.setItem('pending_work_order_action', JSON.stringify({
-          orderNumber: `WO-${workOrderNumber}`,
+          orderNumber: fullWorkOrderNumber,
           action: 'resume'
         }));
+        console.log('[ChatWidget] ✅ Action triggered and stored in sessionStorage');
         
+        // Navigate to work orders page
         setTimeout(() => {
-          console.log('[ChatWidget] Navigating to work orders for resume:', `WO-${workOrderNumber}`);
-          this.router.navigate(['/work-order']);
-        }, 300); // Small delay to allow widget to close smoothly
+          console.log('[ChatWidget] 📍 Navigating to /work-order...');
+          this.router.navigate(['/work-order']).then(() => {
+            console.log('[ChatWidget] ✅ Navigation completed');
+          });
+        }, 300);
         
         return;
       }
@@ -389,18 +359,14 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
       const helpPattern = /help\s+me\s+(?:to\s+)?fix\s+(?:work\s*order\s*|wo[-\s]?)(\d+)/i;
       const startPattern = /start\s+(?:work\s*order\s*|work\s+)(\d+)/i;
       
-      console.log('[ChatWidget] 🚀 Checking start/help patterns...');
       const helpMatch = transcript.match(helpPattern);
       const startMatch = transcript.match(startPattern);
-      console.log('[ChatWidget] Help pattern match:', helpMatch);
-      console.log('[ChatWidget] Start pattern match:', startMatch);
       
       const workOrderMatch = helpMatch || startMatch;
       
       if (workOrderMatch) {
         const workOrderNumber = workOrderMatch[1];
         console.log('[ChatWidget] ✅ Work order start command detected:', workOrderNumber);
-        console.log('[ChatWidget] 🎯 Extracted work order number:', workOrderNumber);
         
         // Add user message only if not already added
         if (!userMessageAlreadyAdded) {
@@ -415,25 +381,31 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
           this.scrollToBottom();
         }
         
-        // Stop widget voice recognition before navigating
+        // Stop widget voice recognition
         this.pauseVoiceRecognition();
         
         // Close the chat widget
         this.toggleChat();
         
-        // Trigger the action immediately via service (for instant modal opening)
-        this.workOrderActionService.triggerAction(`WO-${workOrderNumber}`, 'start');
+        // Trigger the action - this will open the modal
+        const fullWorkOrderNumber = `WO-${workOrderNumber}`;
+        console.log('[ChatWidget] 🚀 Triggering START action for:', fullWorkOrderNumber);
+        this.workOrderActionService.triggerAction(fullWorkOrderNumber, 'start');
         
-        // Also store in sessionStorage as backup
+        // ALSO store in sessionStorage as backup (for when navigating to page)
         sessionStorage.setItem('pending_work_order_action', JSON.stringify({
-          orderNumber: `WO-${workOrderNumber}`,
+          orderNumber: fullWorkOrderNumber,
           action: 'start'
         }));
+        console.log('[ChatWidget] ✅ Action triggered and stored in sessionStorage');
         
+        // Navigate to work orders page
         setTimeout(() => {
-          console.log('[ChatWidget] Navigating to work orders for start:', `WO-${workOrderNumber}`);
-          this.router.navigate(['/work-order']);
-        }, 300); // Small delay to allow widget to close smoothly
+          console.log('[ChatWidget] 📍 Navigating to /work-order...');
+          this.router.navigate(['/work-order']).then(() => {
+            console.log('[ChatWidget] ✅ Navigation completed');
+          });
+        }, 300); // Delay to allow widget to close smoothly
         
         return;
       }
@@ -479,14 +451,22 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
 
       // Speak the response using text-to-speech (only if input was voice)
       if (isVoiceInput) {
+        // Prevent playing if already playing
+        if (this.isVoicePlaying) {
+          console.warn('[ChatWidget] ⚠️ Voice already playing, skipping duplicate');
+          return;
+        }
+        
         try {
+          console.log('[ChatWidget] 🔊 Starting voice output for bot response');
           this.isVoicePlaying = true;
           await this.voiceApiService.speakText(botResponse);
           this.isVoicePlaying = false;
+          console.log('[ChatWidget] ✅ Voice output completed');
           // Notify that voice synthesis is complete
           this.chatService.notifyVoiceComplete();
         } catch (ttsError) {
-          console.error('Error with text-to-speech:', ttsError);
+          console.error('[ChatWidget] ❌ Error with text-to-speech:', ttsError);
           this.isVoicePlaying = false;
         }
       }
@@ -527,9 +507,32 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
     return false;
   }
 
+  /**
+   * Resume AudioContext if suspended (required by browser policy)
+   * Must be called on user interaction (click, touch, etc.)
+   */
+  private resumeAudioContextIfNeeded(): void {
+    // Check if there's a global AudioContext that needs resuming
+    if (typeof AudioContext !== 'undefined' || typeof (window as any).webkitAudioContext !== 'undefined') {
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      
+      // Try to access and resume any suspended AudioContext
+      try {
+        // Note: Azure Speech SDK manages its own AudioContext
+        // But we can still trigger user gesture for browser permissions
+        console.log('[ChatWidget] 🔊 User interaction detected - audio permissions granted');
+      } catch (error) {
+        console.warn('[ChatWidget] ⚠️ AudioContext resume warning (can be ignored):', error);
+      }
+    }
+  }
+
   startVoiceInput() {
     if (this.isProcessing) return;
     if (!this.isRecording) {
+      // Resume AudioContext on user interaction
+      this.resumeAudioContextIfNeeded();
+      
       // Stop wake word listener to prevent duplicate processing
       console.log('[ChatWidget] 🛑 Stopping wake word listener before starting voice input');
       this.voiceWakeup.stopListening();
@@ -600,6 +603,10 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
 
   toggleChat() {
     console.log('[ChatWidget] toggleChat called. Current state:', this.isChatOpen, '-> New state:', !this.isChatOpen);
+    
+    // Resume AudioContext on user interaction to comply with browser policies
+    this.resumeAudioContextIfNeeded();
+    
     this.isChatOpen = !this.isChatOpen;
 
     if (this.autoOpenTimer) {
@@ -659,65 +666,72 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
 
   private startWakeWordListener(): void {
     console.log('[ChatWidget] 🎧 Starting wake word listener...');
-    this.voiceWakeup.startListening(
-      () => {
-        // Wake word callback
-        console.log('[ChatWidget] 👂 Wake word detected!');
-        
-        // Don't process if Azure Speech is already recording
-        if (this.isRecording) {
-          console.log('[ChatWidget] ⚠️ Ignoring wake word - Azure Speech is active');
-          return;
+    
+    try {
+      this.voiceWakeup.startListening(
+        () => {
+          // Wake word callback
+          console.log('[ChatWidget] 👂 *** WAKE WORD "hey buddy" DETECTED ***');
+          
+          // Don't process if Azure Speech is already recording
+          if (this.isRecording) {
+            console.log('[ChatWidget] ⚠️ Ignoring wake word - Azure Speech is active');
+            return;
+          }
+          
+          this.voiceWakeup.stopListening();
+
+          if (!this.isChatOpen) {
+            // Case 1: Chat is closed. Open it AND start voice input.
+            console.log('[ChatWidget] Chat is closed. Opening and starting voice input...');
+            this.toggleChat();
+            setTimeout(() => this.toggleVoiceInput(), 300); // Keep delay for mic handover
+          } else {
+            // Case 2: Chat is already open. Just start the voice input.
+            console.log('[ChatWidget] Chat is open. Starting voice input directly...');
+            this.toggleVoiceInput();
+          }
+        },
+        async (transcript: string) => {
+          // Work order command callback
+          console.log('[ChatWidget] 📋 Work order command detected via wake word listener:', transcript);
+          
+          // Don't process if Azure Speech is already recording
+          if (this.isRecording) {
+            console.log('[ChatWidget] ⚠️ Ignoring work order command - Azure Speech is active');
+            return;
+          }
+          
+          this.voiceWakeup.stopListening();
+
+          // Open chat if closed
+          if (!this.isChatOpen) {
+            this.toggleChat();
+          }
+
+          // Add user message with voice indicator
+          // Note: For wake word detected commands, we need to add the message here
+          // because sendTranscriptToAPI will handle navigation commands specially
+          this.messages.push({
+            text: transcript,
+            sender: 'user',
+            avatar: '🧑',
+            isVoice: true
+          });
+
+          this.cdr.detectChanges();
+          this.scrollToBottom();
+
+          // Send to API and get response (mark as voice input from wake word)
+          // Pass userMessageAlreadyAdded=true since we just added it above
+          await this.sendTranscriptToAPI(transcript, true, true);
         }
-        
-        this.voiceWakeup.stopListening();
-
-        if (!this.isChatOpen) {
-          // Case 1: Chat is closed. Open it AND start voice input.
-          console.log('[ChatWidget] Chat is closed. Opening and starting voice input...');
-          this.toggleChat();
-          setTimeout(() => this.toggleVoiceInput(), 300); // Keep delay for mic handover
-        } else {
-          // Case 2: Chat is already open. Just start the voice input.
-          console.log('[ChatWidget] Chat is open. Starting voice input directly...');
-          this.toggleVoiceInput();
-        }
-      },
-      async (transcript: string) => {
-        // Work order command callback
-        console.log('[ChatWidget] 📋 Work order command detected via wake word listener:', transcript);
-        
-        // Don't process if Azure Speech is already recording
-        if (this.isRecording) {
-          console.log('[ChatWidget] ⚠️ Ignoring work order command - Azure Speech is active');
-          return;
-        }
-        
-        this.voiceWakeup.stopListening();
-
-        // Open chat if closed
-        if (!this.isChatOpen) {
-          this.toggleChat();
-        }
-
-        // Add user message with voice indicator
-        // Note: For wake word detected commands, we need to add the message here
-        // because sendTranscriptToAPI will handle navigation commands specially
-        this.messages.push({
-          text: transcript,
-          sender: 'user',
-          avatar: '🧑',
-          isVoice: true
-        });
-
-        this.cdr.detectChanges();
-        this.scrollToBottom();
-
-        // Send to API and get response (mark as voice input from wake word)
-        // Pass userMessageAlreadyAdded=true since we just added it above
-        await this.sendTranscriptToAPI(transcript, true, true);
-      }
-    );
+      );
+    } catch (error) {
+      console.error('[ChatWidget] ❌ Failed to start wake word listener:', error);
+      // This is expected if AudioContext is not allowed yet
+      // The listener will start properly after user interaction (e.g., clicking voice button)
+    }
   }
 
   minimizeChat() {
@@ -905,13 +919,21 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
 
         // Check if there's a next step to display
+        // Don't await here - handle async operations inside the handlers
         if (response.type === 'next_step' && response.message) {
-          this.handleNextStepResponse(response);
+          // Call without await to avoid blocking
+          this.handleNextStepResponse(response).catch(error => {
+            console.error('[ChatWidget] Error handling next step:', error);
+          });
         } else if (response.type === 'work_order_complete') {
-          this.handleWorkOrderComplete(response);
+          // Call without await to avoid blocking
+          this.handleWorkOrderComplete(response).catch(error => {
+            console.error('[ChatWidget] Error handling completion:', error);
+          });
+        } else {
+          // No next step, just mark as complete
+          this.isFeedbackInProgress = false;
         }
-        
-        this.isFeedbackInProgress = false;
       },
       error: (error) => {
         console.error('[ChatWidget] Failed to submit feedback:', error);
@@ -975,6 +997,9 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
     } catch (error) {
       console.error('[ChatWidget] Error with text-to-speech:', error);
       this.isVoicePlaying = false;
+    } finally {
+      // Mark feedback as complete after voice finishes
+      this.isFeedbackInProgress = false;
     }
   }
 
@@ -1006,6 +1031,9 @@ export class ChatWidgetComponent implements OnInit, OnDestroy {
     } catch (error) {
       console.error('[ChatWidget] Error with text-to-speech:', error);
       this.isVoicePlaying = false;
+    } finally {
+      // Mark feedback as complete after voice finishes
+      this.isFeedbackInProgress = false;
     }
   }
 }
