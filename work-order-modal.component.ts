@@ -77,17 +77,6 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
   private azureSpeechResultSubscription: Subscription | null = null;
   private azureSpeechErrorSubscription: Subscription | null = null;
   private azureSpeechEndSubscription: Subscription | null = null;
-  
-  // Duplicate detection
-  private lastProcessedMessage = '';
-  private lastProcessedTime = 0;
-  private readonly DUPLICATE_THRESHOLD_MS = 3000; // 3 seconds - increased threshold
-  private isProcessingMessage = false; // Flag to prevent concurrent processing
-  private pendingFeedback = new Set<string>(); // Track pending feedback requests
-  
-  // Static global locks to prevent ANY duplicate API calls across all instances
-  private static activeApiCalls = new Map<string, Promise<any>>();
-  private static isAnyModalProcessing = false; // Global flag to prevent ANY modal from processing simultaneously
 
   constructor(
     private readonly workOrderService: WorkOrderService,
@@ -140,6 +129,17 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
     console.log('[WorkOrderModal] 📋 Work Order:', workOrderNumber);
     console.log('[WorkOrderModal] 🎬 Action:', action);
     console.log('[WorkOrderModal] 🔗 Has Callback:', !!onClose);
+    
+    // Prevent duplicate opens if already visible or processing
+    if (this.visible && this.workOrderNumber === workOrderNumber) {
+      console.warn('[WorkOrderModal] ⚠️ Modal already open for this work order, ignoring duplicate open');
+      return;
+    }
+    
+    if (this.isProcessing) {
+      console.warn('[WorkOrderModal] ⚠️ Modal already processing, ignoring duplicate open');
+      return;
+    }
     
     this.workOrderNumber = workOrderNumber;
     this.chatWidgetRef = chatWidget;
@@ -258,11 +258,15 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       const userId = 1; // TODO: Get from AuthService
       const response = await this.workOrderService.startWork(this.workOrderNumber, userId);
       
+      console.log('[WorkOrderModal] 🔍 Start work response received:', response);
+      
+      // Handle error response (original format)
       if (response.type === 'error') {
         this.addMessage('Error starting work order: ' + response.message, 'bot');
         return;
       }
       
+      // Handle original work order start response format
       if (response.type === 'work_order_start') {
         // Store session info
         if (response.session_id) {
@@ -299,6 +303,42 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         // Speak response
         await this.speakText(messageText);
       }
+      // Handle new agentic RAG response format
+      else if ((response as any).success === true && (response as any).is_work_order === true) {
+        console.log('[WorkOrderModal] Detected agentic RAG work order response format');
+        
+        const agenticResponse = response as any;
+        
+        // Format message using the result field
+        let messageText = `Starting work order ${this.workOrderNumber}.`;
+        
+        if (agenticResponse.result) {
+          messageText += `\n\n${agenticResponse.result}`;
+        }
+        
+        this.currentStepNumber++;
+        
+        this.messages.push({
+          text: messageText,
+          sender: 'bot',
+          avatar: '🤖',
+          isVoice: true,
+          sessionId: this.currentSessionId,
+          stepNumber: this.currentStepNumber,
+          feedback: null
+        });
+        
+        this.cdr.detectChanges(); // Force UI update to show message
+        this.scrollToBottom();
+        
+        // Speak response
+        await this.speakText(messageText);
+      }
+      // Handle unexpected response format
+      else {
+        console.warn('[WorkOrderModal] Unexpected response format:', response);
+        this.addMessage('Work order started but received unexpected response format.', 'bot');
+      }
     } catch (error) {
       console.error('Error starting work order:', error);
       this.addMessage('Failed to start work order. Please try again.', 'bot');
@@ -318,11 +358,13 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       
       const response = await this.workOrderService.resumeWorkOrder(this.workOrderNumber);
       
+      // Handle error response (original format)
       if (response.type === 'error') {
         this.addMessage('Error resuming work order: ' + response.message, 'bot');
         return;
       }
       
+      // Handle original work order start response format
       if (response.type === 'work_order_start') {
         // Mark this as a resumed work order
         this.isResumedWorkOrder = true;
@@ -373,6 +415,45 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         // Speak response
         await this.speakText(messageText);
       }
+      // Handle new agentic RAG response format
+      else if ((response as any).success === true && (response as any).is_work_order === true) {
+        console.log('[WorkOrderModal] Detected agentic RAG work order response format for resume');
+        
+        const agenticResponse = response as any;
+        
+        // Mark this as a resumed work order
+        this.isResumedWorkOrder = true;
+        
+        // Format message using the result field
+        let messageText = `Resuming work order ${this.workOrderNumber}.`;
+        
+        if (agenticResponse.result) {
+          messageText += `\n\n${agenticResponse.result}`;
+        }
+        
+        this.currentStepNumber++;
+        
+        this.messages.push({
+          text: messageText,
+          sender: 'bot',
+          avatar: '🤖',
+          isVoice: true,
+          sessionId: this.currentSessionId,
+          stepNumber: this.currentStepNumber,
+          feedback: null
+        });
+        
+        this.cdr.detectChanges(); // Force UI update to show message
+        this.scrollToBottom();
+        
+        // Speak response
+        await this.speakText(messageText);
+      }
+      // Handle unexpected response format
+      else {
+        console.warn('[WorkOrderModal] Unexpected resume response format:', response);
+        this.addMessage('Work order resumed but received unexpected response format.', 'bot');
+      }
     } catch (error) {
       console.error('Error resuming work order:', error);
       this.addMessage('Failed to resume work order. Please try again.', 'bot');
@@ -392,11 +473,13 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       
       const response = await this.workOrderService.restartWorkOrder(this.workOrderNumber);
       
+      // Handle error response (original format)
       if (response.type === 'error') {
         this.addMessage('Error restarting work order: ' + response.message, 'bot');
         return;
       }
       
+      // Handle original work order start response format
       if (response.type === 'work_order_start') {
         // Store session info
         if (response.session_id) {
@@ -432,6 +515,42 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         
         // Speak response
         await this.speakText(messageText);
+      }
+      // Handle new agentic RAG response format
+      else if ((response as any).success === true && (response as any).is_work_order === true) {
+        console.log('[WorkOrderModal] Detected agentic RAG work order response format for restart');
+        
+        const agenticResponse = response as any;
+        
+        // Format message using the result field
+        let messageText = `Restarting work order ${this.workOrderNumber} from the beginning.`;
+        
+        if (agenticResponse.result) {
+          messageText += `\n\n${agenticResponse.result}`;
+        }
+        
+        this.currentStepNumber = 1; // Always start from step 1
+        
+        this.messages.push({
+          text: messageText,
+          sender: 'bot',
+          avatar: '🤖',
+          isVoice: true,
+          sessionId: this.currentSessionId,
+          stepNumber: this.currentStepNumber,
+          feedback: null
+        });
+        
+        this.cdr.detectChanges(); // Force UI update to show message
+        this.scrollToBottom();
+        
+        // Speak response
+        await this.speakText(messageText);
+      }
+      // Handle unexpected response format
+      else {
+        console.warn('[WorkOrderModal] Unexpected restart response format:', response);
+        this.addMessage('Work order restarted but received unexpected response format.', 'bot');
       }
     } catch (error) {
       console.error('Error restarting work order:', error);
@@ -477,24 +596,7 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         if (result.isFinal && result.transcript.trim()) {
           const finalTranscript = result.transcript.trim();
           
-          // CRITICAL: Check if we already processed this exact transcript recently
-          const now = Date.now();
-          const timeSinceLastProcess = now - this.lastProcessedTime;
-          const isSameTranscript = this.lastProcessedMessage.toLowerCase() === finalTranscript.toLowerCase();
-          
-          if (isSameTranscript && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
-            console.warn('[WorkOrderModal] 🚫 DUPLICATE AZURE SPEECH RESULT - Ignoring:', {
-              transcript: finalTranscript,
-              timeSinceLastProcess: `${timeSinceLastProcess}ms`
-            });
-            return; // Don't process duplicate
-          }
-          
-          // CRITICAL: Check if we're already processing a message
-          if (this.isProcessingMessage) {
-            console.warn('[WorkOrderModal] 🚫 ALREADY PROCESSING - Ignoring Azure Speech result:', finalTranscript);
-            return;
-          }
+          console.log('[WorkOrderModal] ✅ Processing Azure Speech final result:', finalTranscript);
           
           // Stop recognition to process this result
           this.isRecording = false;
@@ -561,50 +663,18 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
   async sendMessage(): Promise<void> {
     const messageText = this.userInput.trim();
     
-    // FIRST: Check if ANY modal is currently processing (global check)
-    if (WorkOrderModalComponent.isAnyModalProcessing) {
-      console.warn('[WorkOrderModal] 🚫 BLOCKED GLOBALLY - Another modal is processing. Ignoring:', messageText);
-      this.userInput = ''; // Clear input
-      return;
-    }
-    
-    // SECOND: Check if we're already processing ANY message (instance check)
-    if (this.isProcessingMessage) {
-      console.warn('[WorkOrderModal] 🚫 BLOCKED - Already processing a message. Ignoring:', messageText);
-      this.userInput = ''; // Clear input
-      return;
-    }
-    
-    // THIRD: Check for empty input
+    // Check for empty input
     if (!messageText) {
       console.log('[WorkOrderModal] ⚠️ Skipping sendMessage - empty input');
       return;
     }
     
-    // FOURTH: Set processing flags IMMEDIATELY before any other checks
-    WorkOrderModalComponent.isAnyModalProcessing = true;
-    this.isProcessingMessage = true;
-    
-    // FIFTH: Check for duplicate message content within time window
-    const now = Date.now();
-    const timeSinceLastProcess = now - this.lastProcessedTime;
-    const isSameMessage = this.lastProcessedMessage.toLowerCase() === messageText.toLowerCase();
-    
-    if (isSameMessage && timeSinceLastProcess < this.DUPLICATE_THRESHOLD_MS) {
-      console.warn('[WorkOrderModal] ⚠️ DUPLICATE MESSAGE CONTENT DETECTED - Ignoring:', {
-        message: messageText,
-        timeSinceLastProcess: `${timeSinceLastProcess}ms`,
-        threshold: `${this.DUPLICATE_THRESHOLD_MS}ms`
-      });
+    // Check if already processing
+    if (this.isProcessing) {
+      console.warn('[WorkOrderModal] 🚫 Already processing a message. Ignoring:', messageText);
       this.userInput = ''; // Clear input
-      WorkOrderModalComponent.isAnyModalProcessing = false; // Reset global flag
-      this.isProcessingMessage = false; // Reset instance flag
       return;
     }
-    
-    // Update tracking
-    this.lastProcessedMessage = messageText;
-    this.lastProcessedTime = now;
     
     this.userInput = '';
     
@@ -623,10 +693,8 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         // Send as regular query to chat API
         await this.sendQueryToAPI(messageText);
       }
-    } finally {
-      // Always clear ALL processing flags
-      WorkOrderModalComponent.isAnyModalProcessing = false;
-      this.isProcessingMessage = false;
+    } catch (error) {
+      console.error('[WorkOrderModal] Error in sendMessage:', error);
     }
   }
 
@@ -634,24 +702,12 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
    * Send general query to API
    */
   private async sendQueryToAPI(query: string): Promise<void> {
-    const callKey = `query-${query.toLowerCase().trim()}`;
-    
-    // Check if this exact call is already in progress globally
-    if (WorkOrderModalComponent.activeApiCalls.has(callKey)) {
-      console.warn('[WorkOrderModal] ⛔ DUPLICATE QUERY API CALL BLOCKED - Already in progress:', query);
-      return;
-    }
-    
     try {
       this.isProcessing = true;
       this.cdr.detectChanges();
 
-      // Create the API call promise and store it
-      const apiPromise = this.voiceApiService.sendTextToAPI(query, false);
-      WorkOrderModalComponent.activeApiCalls.set(callKey, apiPromise);
-      
-      // Get response from chat API
-      const botResponse = await apiPromise;
+      // Get response from chat API - the API request manager handles deduplication
+      const botResponse = await this.voiceApiService.sendTextToAPI(query, false);
 
       // DON'T increment stepNumber here - this is not a tracked workflow step
       // Only work order start/proceed responses should have step numbers for feedback
@@ -683,9 +739,6 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       
       // Restart wake word listener even on error
       setTimeout(() => this.startModalWakeWordListener(), 500);
-    } finally {
-      // Always clean up the active call
-      WorkOrderModalComponent.activeApiCalls.delete(callKey);
     }
   }
 
@@ -695,28 +748,13 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
   private async proceedToNextStep(userInput: string): Promise<void> {
     // Prevent duplicate proceed calls
     if (this.isProcessing || this.isFeedbackInProgress) {
-      console.warn('[WorkOrderModal] ⚠️ DUPLICATE PROCEED - Already processing');
-      return;
-    }
-    
-    // Check if we have a pending feedback request for this step
-    const proceedKey = `proceed-${this.currentSessionId}-${this.currentStepNumber}`;
-    if (this.pendingFeedback.has(proceedKey)) {
-      console.warn('[WorkOrderModal] ⚠️ DUPLICATE PROCEED REQUEST - Already in progress:', proceedKey);
-      return;
-    }
-    
-    // Global lock to prevent duplicate across all instances
-    const globalKey = `feedback-${this.currentSessionId}-${this.currentStepNumber}`;
-    if (WorkOrderModalComponent.activeApiCalls.has(globalKey)) {
-      console.error('[WorkOrderModal] ⛔ DUPLICATE FEEDBACK API CALL BLOCKED GLOBALLY:', globalKey);
+      console.warn('[WorkOrderModal] ⚠️ Already processing proceed request');
       return;
     }
     
     try {
       this.isProcessing = true;
       this.isFeedbackInProgress = true;
-      this.pendingFeedback.add(proceedKey);
       
       const userId = 1; // TODO: Get from AuthService
       
@@ -736,16 +774,10 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
             userId
           );
       
-      // Convert observable to promise and store in global lock
-      const feedbackPromise = feedbackObservable.toPromise();
-      WorkOrderModalComponent.activeApiCalls.set(globalKey, feedbackPromise);
-      
+      // The API request manager handles deduplication automatically
       feedbackObservable.subscribe({
         next: async (response) => {
           console.log('[WorkOrderModal] Next step response:', response);
-          
-          // Clean up global lock on success
-          WorkOrderModalComponent.activeApiCalls.delete(globalKey);
           
           // Update step ID if provided (for resumed work orders)
           // Use next_step for resumed work orders, current_step for chat-started
@@ -881,25 +913,17 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
           
           this.isFeedbackInProgress = false;
           this.isProcessing = false;
-          this.pendingFeedback.delete(proceedKey);
         },
         error: (error) => {
           console.error('[WorkOrderModal] Failed to proceed:', error);
           this.addMessage('Failed to proceed. Please try again.', 'bot');
           this.isFeedbackInProgress = false;
           this.isProcessing = false;
-          this.pendingFeedback.delete(proceedKey);
-          WorkOrderModalComponent.activeApiCalls.delete(globalKey); // Clean up global lock
         }
       });
     } catch (error) {
       console.error('[WorkOrderModal] Error:', error);
       this.isFeedbackInProgress = false;
-      this.isProcessing = false;
-      const proceedKey = `proceed-${this.currentSessionId}-${this.currentStepNumber}`;
-      this.pendingFeedback.delete(proceedKey);
-      const globalKey = `feedback-${this.currentSessionId}-${this.currentStepNumber}`;
-      WorkOrderModalComponent.activeApiCalls.delete(globalKey); // Clean up global lock
       this.isProcessing = false;
     }
   }
@@ -914,13 +938,6 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       return;
     }
     
-    // Check if feedback is already being submitted for this message
-    const feedbackKey = `${message.sessionId}-${message.stepNumber}-${isPositive}`;
-    if (this.pendingFeedback.has(feedbackKey)) {
-      console.warn('[WorkOrderModal] ⚠️ DUPLICATE FEEDBACK - Already submitting:', feedbackKey);
-      return;
-    }
-    
     // Check if feedback was already submitted
     if (message.feedback) {
       console.warn('[WorkOrderModal] ⚠️ Feedback already submitted for this message:', message.feedback);
@@ -929,7 +946,6 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
 
     const feedback = isPositive ? 'positive' : 'negative';
     this.isFeedbackInProgress = true;
-    this.pendingFeedback.add(feedbackKey);
 
     console.log('[WorkOrderModal] 📝 Submitting feedback:', { 
       sessionId: message.sessionId, 
@@ -937,6 +953,7 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       feedback 
     });
 
+    // The API request manager handles deduplication automatically
     this.feedbackService.submitFeedback(
       message.sessionId,
       message.stepNumber,
@@ -944,23 +961,29 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       '',
       1 // TODO: Get from AuthService
     ).subscribe({
-      next: async (response) => {
+      next: (response) => {
         message.feedback = feedback;
         this.cdr.detectChanges();
 
+        // Don't await here - handle async operations inside the handlers
         if (response.type === 'next_step' && response.message) {
-          await this.handleNextStepResponse(response);
+          // Call without await to avoid blocking
+          this.handleNextStepResponse(response).catch(error => {
+            console.error('[WorkOrderModal] Error handling next step:', error);
+          });
         } else if (response.type === 'complete' || response.type === 'work_order_complete') {
-          await this.handleWorkOrderComplete(response);
+          // Call without await to avoid blocking
+          this.handleWorkOrderComplete(response).catch(error => {
+            console.error('[WorkOrderModal] Error handling completion:', error);
+          });
+        } else {
+          // No next step, just mark as complete
+          this.isFeedbackInProgress = false;
         }
-        
-        this.isFeedbackInProgress = false;
-        this.pendingFeedback.delete(feedbackKey);
       },
       error: (error) => {
         console.error('[WorkOrderModal] Feedback error:', error);
         this.isFeedbackInProgress = false;
-        this.pendingFeedback.delete(feedbackKey);
       }
     });
   }
@@ -998,6 +1021,9 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
 
     this.scrollToBottom();
     await this.speakText(messageText);
+    
+    // Mark feedback as complete after voice finishes
+    this.isFeedbackInProgress = false;
   }
 
   /**
@@ -1057,6 +1083,9 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
     }
     
     await this.speakText(speechText);
+    
+    // Mark feedback as complete after voice finishes
+    this.isFeedbackInProgress = false;
   }
 
   /**
