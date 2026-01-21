@@ -312,8 +312,16 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         await this.speakText(messageText);
       }
       // Handle new agentic RAG response format
-      else if ((response as any).success === true && (response as any).is_work_order === true) {
+      else if ((response as any).success === true && 
+               ((response as any).is_work_order === true || 
+                (response as any).route === "wo_current" ||
+                (response as any).result)) {
         console.log('[WorkOrderModal] ✅ Detected agentic RAG work order response format');
+        console.log('[WorkOrderModal] 🔍 Match criteria:');
+        console.log('  - success === true:', (response as any).success === true);
+        console.log('  - is_work_order === true:', (response as any).is_work_order === true);
+        console.log('  - route === "wo_current":', (response as any).route === "wo_current");
+        console.log('  - has result field:', !!(response as any).result);
         
         const agenticResponse = response as any;
         
@@ -433,8 +441,11 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         await this.speakText(messageText);
       }
       // Handle new agentic RAG response format
-      else if ((response as any).success === true && (response as any).is_work_order === true) {
-        console.log('[WorkOrderModal] Detected agentic RAG work order response format for resume');
+      else if ((response as any).success === true && 
+               ((response as any).is_work_order === true || 
+                (response as any).route === "wo_current" ||
+                (response as any).result)) {
+        console.log('[WorkOrderModal] ✅ Detected agentic RAG work order response format for resume');
         
         const agenticResponse = response as any;
         
@@ -534,8 +545,11 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         await this.speakText(messageText);
       }
       // Handle new agentic RAG response format
-      else if ((response as any).success === true && (response as any).is_work_order === true) {
-        console.log('[WorkOrderModal] Detected agentic RAG work order response format for restart');
+      else if ((response as any).success === true && 
+               ((response as any).is_work_order === true || 
+                (response as any).route === "wo_current" ||
+                (response as any).result)) {
+        console.log('[WorkOrderModal] ✅ Detected agentic RAG work order response format for restart');
         
         const agenticResponse = response as any;
         
