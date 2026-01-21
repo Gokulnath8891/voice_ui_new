@@ -260,6 +260,14 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       
       console.log('[WorkOrderModal] 🔍 Start work response received:', response);
       
+      // Debug: Log the response properties
+      console.log('[WorkOrderModal] 🐛 Debug response properties:');
+      console.log('  - response.type:', (response as any).type);
+      console.log('  - response.success:', (response as any).success);
+      console.log('  - response.is_work_order:', (response as any).is_work_order);
+      console.log('  - typeof success:', typeof (response as any).success);
+      console.log('  - typeof is_work_order:', typeof (response as any).is_work_order);
+      
       // Handle error response (original format)
       if (response.type === 'error') {
         this.addMessage('Error starting work order: ' + response.message, 'bot');
@@ -305,7 +313,7 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       }
       // Handle new agentic RAG response format
       else if ((response as any).success === true && (response as any).is_work_order === true) {
-        console.log('[WorkOrderModal] Detected agentic RAG work order response format');
+        console.log('[WorkOrderModal] ✅ Detected agentic RAG work order response format');
         
         const agenticResponse = response as any;
         
@@ -315,6 +323,8 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
         if (agenticResponse.result) {
           messageText += `\n\n${agenticResponse.result}`;
         }
+        
+        console.log('[WorkOrderModal] 📝 Formatted message:', messageText);
         
         this.currentStepNumber++;
         
@@ -336,7 +346,14 @@ export class WorkOrderModalComponent implements OnInit, OnDestroy {
       }
       // Handle unexpected response format
       else {
-        console.warn('[WorkOrderModal] Unexpected response format:', response);
+        console.warn('[WorkOrderModal] ❌ Unexpected response format received');
+        console.warn('[WorkOrderModal] 📊 Full response object:', JSON.stringify(response, null, 2));
+        console.warn('[WorkOrderModal] 🔍 Condition checks:');
+        console.warn('  - Original format check (response.type === "work_order_start"):', (response as any).type === 'work_order_start');
+        console.warn('  - New format check part 1 (response.success === true):', (response as any).success === true);
+        console.warn('  - New format check part 2 (response.is_work_order === true):', (response as any).is_work_order === true);
+        console.warn('  - Combined new format check:', (response as any).success === true && (response as any).is_work_order === true);
+        
         this.addMessage('Work order started but received unexpected response format.', 'bot');
       }
     } catch (error) {
