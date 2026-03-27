@@ -1,0 +1,127 @@
+# Docker ignore file for Voice Assistant
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Static and media files (generated during build)
+staticfiles/
+media/
+
+# Database files
+*.db
+*.sqlite3
+*.table
+logs/
+voice_assistant.log
+voice_assistant.pid
+
+# Database
+*.sqlite3
+*.db
+
+# Environment files
+.env
+.env.local
+.env.docker
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# Documentation
+*.md
+
+# Scripts
+*.sh
+
+# Test and debug files
+test_*.py
+debug_*.py
+demo_*.py
+*_test.py
+trace_*.py
+
+# Specific test/debug files
+simple_wake_word_test.py
+wake_word_example.py
+wake_word_test.py
+wake_word_workorder_integration.py
+voice_integration_example.py
+voice_proxy_system.py
+voice_work_order_system.py
+workorder_voice_demo.py
+updated_pdf_processor.py
+insert_sample_data.py
+migrate_to_postgres.py
+pdf_to_vectordb.py
+docs_to_postgres.py
+docs_to_postgres_fixed.py
+reset_work_progress.py
+check_work_order_status.py
+
+# Unnecessary data directories for Docker
+docs/
+data/
+chroma_db/
+
+# Media files (if large)
+media/uploads/
+
+# Node modules (if any)
+node_modules/
+
+# Coverage reports
+htmlcov/
+.coverage
