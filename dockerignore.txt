@@ -100,7 +100,6 @@ wake_word_test.py
 wake_word_workorder_integration.py
 voice_integration_example.py
 voice_proxy_system.py
-voice_work_order_system.py
 workorder_voice_demo.py
 updated_pdf_processor.py
 insert_sample_data.py
