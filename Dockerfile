@@ -48,6 +48,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY --chown=appuser:appuser . .
 
+# Copy and set up startup script
+COPY --chown=appuser:appuser start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
 # Create .env file from environment variables at runtime
 # This will be populated by Azure Container Apps environment variables
 RUN touch /app/.env && chown appuser:appuser /app/.env
@@ -64,55 +68,6 @@ EXPOSE 8000
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/api/health/ || exit 1
-
-# Create startup script
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-echo "================================="\n\
-echo "Starting Django Application"\n\
-echo "================================="\n\
-\n\
-# Wait for database to be ready (if using Azure Database for PostgreSQL)\n\
-if [ ! -z "$DB_HOST" ]; then\n\
-    echo "Waiting for database at $DB_HOST:$DB_PORT..."\n\
-    until pg_isready -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" 2>/dev/null; do\n\
-        echo "Database is unavailable - retrying in 2 seconds..."\n\
-        sleep 2\n\
-    done\n\
-    echo "Database is ready!"\n\
-fi\n\
-\n\
-# Run Django migrations\n\
-echo "Running database migrations..."\n\
-python manage.py migrate --noinput\n\
-\n\
-# Create superuser if needed (only in non-production)\n\
-if [ "$DJANGO_DEBUG" = "True" ]; then\n\
-    echo "Debug mode: Creating superuser if not exists..."\n\
-    python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username='"'"'admin'"'"').exists() or User.objects.create_superuser('"'"'admin'"'"', '"'"'admin@example.com'"'"', '"'"'admin123'"'"')" 2>/dev/null || true\n\
-fi\n\
-\n\
-echo "================================="\n\
-echo "Starting Gunicorn Server"\n\
-echo "================================="\n\
-\n\
-# Start Gunicorn with optimal settings for Azure\n\
-exec gunicorn workorder_system.wsgi:application \\\n\
-    --bind 0.0.0.0:8000 \\\n\
-    --workers ${GUNICORN_WORKERS:-4} \\\n\
-    --threads ${GUNICORN_THREADS:-2} \\\n\
-    --worker-class gthread \\\n\
-    --worker-tmp-dir /dev/shm \\\n\
-    --timeout ${GUNICORN_TIMEOUT:-120} \\\n\
-    --graceful-timeout 30 \\\n\
-    --keep-alive 5 \\\n\
-    --access-logfile - \\\n\
-    --error-logfile - \\\n\
-    --log-level ${LOG_LEVEL:-info} \\\n\
-    --capture-output \\\n\
-    --enable-stdio-inheritance\n\
-' > /app/start.sh && chmod +x /app/start.sh
 
 # Start application
 CMD ["/bin/bash", "/app/start.sh"]
